@@ -1,0 +1,2 @@
+select id, user_id, channel_id, marketing_team_id, crm_group_id, kol_id, nhanviencarepage_id
+from utm_source 

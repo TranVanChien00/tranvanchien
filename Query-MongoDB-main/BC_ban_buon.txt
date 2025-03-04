@@ -1,0 +1,127 @@
+with data_raw as (
+select
+    sale_order.id order_id
+    , date_trunc('day', confirmed_datetime + interval '7 hour') ngay 
+    , res_users.name user_name 
+    , crm_group.name group_name 
+    , crmf99_system.name system_name 
+    , crm_team.name team_name 
+    , country_type.name country_name 
+    , product_category.name category_name  
+    , res_partner.name partner_name 
+    , apif99_res_country_state.name state_name 
+    , chu_nhan.name chu_nhan_name
+    , ht_chu_nhan.name ht_chu_nhan_name
+    , utm_channel.name channel_name 
+    , res_users.id user_id 
+    , crm_group.id group_id 
+    , crmf99_system.id system_id 
+    , crm_team.id team_id 
+    , country_type.id country_id 
+    , product_category.id category_id  
+    , res_partner.id partner_id
+    , apif99_res_country_state.id state_id
+    , chu_nhan.id chu_nhan_id
+    , utm_channel.id channel_id
+    , ht_chu_nhan.id ht_chu_nhan_id
+    , case 
+        when crm_group.crm_group_type= 'ban_buon_he_thong' then 'Bán buôn tổng'
+        when (res_partner.customer_type = 'wholesale' and  crm_team.sale_team_type = 'sale')  then 'Bán buôn hệ thống' 
+    end loai_don 
+    , sale_order_line.product_uom_qty so_luong
+    , case when sale_order_line.ti_gia is not null and sale_order_line.ti_gia > 1 then sale_order_line.thanh_tien_noi_dia else price_subtotal end doanh_so
+from sale_order_line 
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join crm_lead on crm_lead.id = sale_order.opportunity_id
+    left join crm_team on crm_team.id = sale_order.team_id  
+    left join res_users on res_users.id = sale_order.user_id  
+    left join crm_group on crm_group.id = sale_order.crm_group_id    
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id 
+    left join utm_source on utm_source.id = sale_order.source_id
+    left join utm_channel on utm_channel.id = utm_source.channel_id
+    left join country_type on country_type.id = res_partner.country_type_id
+    left join product_product on sale_order_line.product_id = product_product.id 
+    left join product_template on product_template.id = product_product.product_tmpl_id
+    left join product_category on product_category.id = product_template.categ_id
+    left join crm_group chu_nhan on chu_nhan.id = product_template.crm_group_id
+    left join crmf99_system ht_chu_nhan on ht_chu_nhan.id = chu_nhan.crmf99_system_id
+    left join apif99_res_country_state on apif99_res_country_state.id = sale_order.state_id	
+where 
+    sale_order.summary_state not in ('rfq','cancel') 
+    and crm_group.crm_group_type!= 'tmdt'
+    and (
+        crm_group.crm_group_type= 'ban_buon_he_thong'
+        or 
+        (res_partner.customer_type = 'wholesale' and  crm_team.sale_team_type = 'sale')
+    )
+    and sale_order.confirmed_datetime = @ngay 
+    and res_users.id = @user_id 
+    and crm_group.id = @group_id 
+    and crmf99_system.id = @system_id 
+    and crm_team.id = @team_id 
+    and country_type.id = @country_id 
+    and product_category.id = @category_id  
+    and res_partner.id = @partner_id
+    and apif99_res_country_state.id = @state_id
+    and chu_nhan.id = @chu_nhan_id
+    and utm_channel.id = @channel_id
+    and ht_chu_nhan.id = @ht_chu_nhan_id
+) 
+
+select 
+    ngay 
+    , loai_don
+    , user_name
+	, group_name
+	, system_name
+	, team_name
+	, channel_name
+	, country_name
+	, category_name
+	, chu_nhan_name
+	, ht_chu_nhan_name 
+	, partner_name
+	, state_name
+	, user_id
+	, group_id
+	, system_id
+	, team_id
+	, channel_id
+	, country_id
+	, category_id
+	, chu_nhan_id
+	, ht_chu_nhan_id 
+	, partner_id
+	, state_id
+	, sum(doanh_so) doanh_so 
+	, sum(so_luong) so_luong
+	, count(distinct order_id) so_don 
+from data_raw
+group by 
+    ngay 
+    , loai_don
+    , user_name
+	, group_name
+	, system_name
+	, team_name
+	, channel_name
+	, country_name
+	, category_name
+	, chu_nhan_name
+	, ht_chu_nhan_name 
+	, partner_name
+	, state_name
+	, user_id
+	, group_id
+	, system_id
+	, team_id
+	, channel_id
+	, country_id
+	, category_id
+	, chu_nhan_id
+	, ht_chu_nhan_id 
+	, partner_id
+	, state_id
+	
+user_id, group_id, system_id, team_id, channel_id, country_id, category_id, chu_nhan_id, ht_chu_nhan_id , partner_id, state_id

@@ -1,0 +1,84 @@
+with data_raw as ( 
+select 
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.latest_done_pick_datetime + interval '7 hour') ngay_van_chuyen 
+    , coalesce(sale_order.user_id, 0) user_id 
+    , coalesce(sale_order.team_id, 0) team_id 
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id 
+    , coalesce(sale_order.product_category_id, 0) product_category_id 
+    , sale_order.opportunity_type 
+    , res_partner.customer_type 
+    , sale_order.summary_state 
+    , sale_order.lydosaituyen
+    , apif99_delivery_order.evaled_postage_amount tam_tinh
+    , apif99_delivery_order.postage_amount tien_cuoc
+    , stock_warehouse.region
+    , case when position('1' in string_agg(case when sale_order.state_id = stock_warehouse_tinh_thanh_uu_tiens.apif99_res_country_state_id then '1' else '0' end, ', '))> 0 then 'dung_tuyen' else 'sai_tuyen' end kiem_tra
+    , case 
+    when crm_group.crm_group_type= 'tmdt' then 'Thương mại điện tử'
+    when crm_group.crm_group_type= 'ban_buon_he_thong' then 'Bán buôn tổng'
+    when (res_partner.customer_type = 'wholesale' and sale_order.opportunity_type = 'sale') then 'Bán buôn hệ thống'
+    when crm_group.crm_group_type = 'sale' then 'Sale' 
+    when crm_group.crm_group_type = 'resale' then 'Resale' 
+    else 'Khác' 
+    end phan_loai_theo_cong_ty 
+    , case when position( 'sua' in string_agg(phanloaisanpham, ', '))> 0 then 'sua' else 'thuong' end phan_loai_don
+    , sum(sale_order_line.product_uom_qty*coalesce((select value_float from ir_property where ir_property.res_id = concat('product.product,', product_product.id)), 0)) gia_von
+    , sum(sale_order_line.product_uom_qty) so_luong_ban
+    , case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount 
+    , stock_warehouse.id warehouse_id
+from 
+    sale_order_line
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join res_partner on res_partner.id = sale_order.partner_id 
+    left join stock_warehouse on stock_warehouse.id = sale_order.warehouse_id
+    left join stock_warehouse_tinh_thanh_uu_tiens on stock_warehouse_tinh_thanh_uu_tiens.stock_warehouse_id = stock_warehouse.id  
+    left join apif99_delivery_order on sale_order.latest_delivery_order_id = apif99_delivery_order.id
+    left join crm_group on crm_group.id = sale_order.crm_group_id 
+    left join product_product on product_product.id = sale_order_line.product_id
+    left join product_template on product_template.id = product_product.product_tmpl_id
+
+where 
+    sale_order.latest_done_pick_datetime between (date_trunc('month', current_date) + interval '-5 month -7 hour') and (current_date + interval '17 hour + 00 minute - 1 second')
+group by 
+    sale_order.id 
+    , res_partner.id 
+    , apif99_delivery_order.id
+    , stock_warehouse.id 
+    , crm_group.id 
+)
+select 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id
+    , warehouse_id
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , coalesce(count(distinct order_id) filter(where summary_state= 'returned'), 0) don_hoan
+    , coalesce(sum(amount) filter(where summary_state= 'returned'), 0) ds_hoan
+    , coalesce(count(distinct order_id) filter(wshere summary_state= 'completed'), 0) don_thanh_cong
+    , coalesce(sum(amount) filter(where summary_state= 'completed'), 0) ds_thanh_cong
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty= 'Thương mại điện tử'), 0) ds_cty_tmdt 
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty in ('Bán buôn hệ thống', 'Bán buôn tổng')), 0) ds_cty_ban_buon
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty= 'Sale'), 0) ds_cty_sale 
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty= 'Resale'), 0) ds_cty_resale
+    , coalesce(sum(amount) filter(where summary_state= 'returned'), 0) ds_hoan
+    , count(distinct order_id) filter(where kiem_tra= 'sai_tuyen') sai_tuyen 
+    , count(distinct order_id) filter(where kiem_tra= 'sai_tuyen' and lydosaituyen= 'kho_uu_tien_khong_du_ton') sai_tuyen_thieu_ton 
+    , sum(case when region in ('nam', 'bac') then case when summary_state in ('completed', 'returned') then tien_cuoc else tam_tinh end else 0 end) phi_ship_tam_tinh
+    , sum(case when region in ('nam', 'bac') then tien_cuoc else 0 end) phi_ship
+    , sum(amount) filter(where region in ('nam', 'bac')) ds_theo_ship 
+    , coalesce(count(distinct order_id) filter(where phan_loai_don= 'sua'), 0) don_sua  
+from data_raw 
+group by 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id
+    , warehouse_id

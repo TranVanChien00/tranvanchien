@@ -1,0 +1,44 @@
+with data_raw as (
+select 
+    date_trunc('day', stock_picking_value.picking_date + interval '7 hour') ngay_xuat
+    , case when stock_picking.location_dest_id= 5 then stock_picking_value.subtotal else -stock_picking_value.subtotal end doanh_so
+    , coalesce(naturemade_source_customer.id, 0) source_customer_id 
+from 
+	stock_picking 
+	left join sale_order on sale_order.id = stock_picking.sale_id
+	left join res_partner on stock_picking.partner_id = res_partner.id 
+    left join naturemade_source_customer on naturemade_source_customer.id = res_partner.source_customer_id
+    left join stock_picking_value on stock_picking_value.picking_id = stock_picking.id 
+	left join product_product on product_product.id = stock_picking_value.product_id 
+	left join product_template on product_template.id = product_product.product_tmpl_id
+	left join stock_location on stock_picking.location_id = stock_location.id 
+where 
+    stock_picking.state= 'done'
+    and stock_picking.sale_id is not null 
+    and (stock_picking.location_dest_id= 5 or stock_picking.location_id= 5)
+union all
+select 
+    date_trunc('day', stock_picking.date_done + interval '7 hour') ngay_xuat
+    , case when stock_picking.location_dest_id= 5 then coalesce(stock_move_line.qty_done, 0)*coalesce(product_template.list_price, 0) else -coalesce(stock_move_line.qty_done, 0)*coalesce(product_template.list_price, 0) end "DS xuất" 
+    , coalesce(naturemade_source_customer.id, 0) source_customer_id
+from 
+	stock_picking  
+	left join res_partner on stock_picking.partner_id = res_partner.id 
+    left join naturemade_source_customer on naturemade_source_customer.id = res_partner.source_customer_id
+	left join stock_move_line on stock_picking.id = stock_move_line.picking_id 
+	left join product_product on product_product.id = stock_move_line.product_id 
+	left join product_template on product_template.id = product_product.product_tmpl_id
+	left join stock_location on stock_picking.location_id = stock_location.id 
+where 
+    stock_picking.state= 'done'
+    and (stock_picking.location_dest_id= 5 or stock_picking.location_id= 5)
+    and stock_picking.sale_id is null 
+)
+select 
+    source_customer_id
+    , ngay_xuat
+    , coalesce(sum(doanh_so), 0) doanh_so
+from data_raw
+group by 
+    source_customer_id
+    , ngay_xuat

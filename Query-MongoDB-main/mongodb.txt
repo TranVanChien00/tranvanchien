@@ -1,0 +1,50 @@
+[
+    {"$facet":{
+        "first":[
+            {"$match":{
+                "$and": [ 
+                            [[{ ngay: {"$gte": {{start_date}}, "$lte":new Date()}},]]
+                            {"$or": [
+                                [[{ ngay: {"$gte": {{start_date}},"$lte":new Date()}},]] 
+                                { "$expr": {"$eq": [ {"$dateDiff":{startDate: "$ngay",endDate: new Date(),unit: "day"}}, 0 ]}}
+                            ]}
+                ]
+            }},
+            {"$project": {
+                "_id": "_id", "xuat_ban": "$xuat_ban"
+            }}, 
+            {"$limit": 10}
+        ],
+        "second":[
+            {"$match":{
+                "$and": [ 
+                            [[{ ngay: {"$gte": {{start_date}}, "$lte":{{end_date}}}},]]
+                            {"$or": [
+                                [[{ ngay: {"$gte": {{start_date}},"$lte":{{end_date}}}},]] 
+                                { "$expr": {"$eq": [ {"$dateDiff":{startDate: "$ngay",endDate: new Date(),unit: "day"}}, 0 ]}}
+                            ]}
+                ]
+            }},
+            {"$project": {
+                "_id": "_id", "xuat_ban": "$xuat_ban"
+            }}, 
+            {"$limit": 10}
+        ]
+    }},
+    {"$lookup": {
+        from: "first",
+        let: {
+            "day2": "$_id"
+        },
+        pipeline: [
+            {"$match": {
+                "$expr": {"$eq": ["$day2","$second._id" ]}
+            }},
+            {"$project": {
+                "day2": true,
+                "xuat_ban": "$first.xuat_ban"
+            }}
+        ],
+      as: "total2"
+    }}
+]

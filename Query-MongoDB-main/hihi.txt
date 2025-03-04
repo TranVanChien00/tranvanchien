@@ -1,0 +1,171 @@
+with 
+_date as (
+select 
+        generate_series ngay
+from generate_series(
+                    coalesce([[date_trunc('month', {{Date}}::date) + interval '- 28 day',]] date_trunc('month', current_date) + interval '- 28 day') 
+                    , coalesce([[date_trunc('month', {{Date}}::date) + interval '1 month - 1 second',]] current_date)
+                    , '1 day'::interval
+    )
+where generate_series<= current_date
+), 
+---------------------------------------- Dữ liệu số lượng bán, nhập xuất truy vết thô, tồn hiện tại ----------------------------------------
+_databan as ( 
+select 
+    bc_ds_bh_nvc_line.product_id
+    , latest_done_pick_datetime  ngay 
+    , warehouse_id
+    , sum(so_luong_ban) soluongban 
+from 
+    bc_ds_bh_nvc_line
+    left join product_product on product_product.id = bc_ds_bh_nvc_line.product_id 
+where 
+    --product_product.default_code= '116695'
+    1=1
+    and 
+        [[ latest_done_pick_datetime between date_trunc('month', {{Date}}::date) + interval '-28 day' and date_trunc('month', {{Date}}::date) + interval '1 month - 1 second' and ]]
+    (
+        latest_done_pick_datetime between date_trunc('month', current_date) + interval '-28 day' and current_date + interval '- 1 second'
+        [[ or latest_done_pick_datetime between date_trunc('month', {{Date}}::date) + interval '-28 day' and date_trunc('month', {{Date}}::date) + interval '1 month - 1 second' ]]
+    )
+group by 
+    bc_ds_bh_nvc_line.product_id
+    , ngay 
+    , warehouse_id
+order by ngay 
+), 
+_tonhientai as (
+select 
+   bc_ton_kho.product_id
+   , bc_ton_kho.warehouse_id 
+   , sum(ton) ton 
+from 
+    bc_ton_kho
+    left join product_product on product_product.id = bc_ton_kho.product_id 
+where
+    1=1
+    --product_product.default_code= '116695'
+group by 
+    bc_ton_kho.product_id
+   , bc_ton_kho.warehouse_id 
+), 
+_datatruyvet as (
+select 
+    bc_truy_vet.product_id 
+    , bc_truy_vet.warehouse_id 
+    , date 
+    , sum(tong_move) tong_move
+from 
+    bc_truy_vet 
+    left join product_product on product_product.id = bc_truy_vet.product_id
+where 
+    1=1
+    --product_product.default_code= '116695'
+    and 
+        [[ date >= date_trunc('month', {{Date}}::date) and ]]
+    (
+        date >= date_trunc('month', current_date) 
+        [[ or date >= date_trunc('month', {{Date}}::date) ]]
+    )
+group by 
+    bc_truy_vet.product_id 
+    , bc_truy_vet.warehouse_id 
+    , date 
+), 
+---------------------------------------- join ngày + sản phẩm + kho ---------------------------------------- 
+_table as (
+select * 
+from 
+    (select distinct product_id, warehouse_id from _databan
+    union select distinct product_id, warehouse_id from _tonhientai
+    union select distinct product_id, warehouse_id from _datatruyvet) tab, _date
+), 
+---------------------------------------- Dữ liệu số lượng bán, nhập xuất qua xử lý ngày trống ----------------------------------------
+
+_databannew as (
+select _table.ngay, _table.product_id, _table.warehouse_id, coalesce(soluongban, 0) soluongban
+from 
+    _table 
+    left join _databan on _databan.ngay = _table.ngay and _table.warehouse_id = _databan.warehouse_id
+), 
+_datatruyvetnew as (
+select _table.ngay, _table.product_id, _table.warehouse_id, coalesce(tong_move, 0) tong_move
+from 
+    _table 
+    left join _datatruyvet on _datatruyvet.date = _table.ngay and _table.warehouse_id = _datatruyvet.warehouse_id
+where 
+    date_trunc('month', _table.ngay) = coalesce([[ date_trunc('month', {{Date}}::date), ]] date_trunc('month', current_date))
+),
+---------------------------------------- Số liệu bán, nhập xuất lũy kế ----------------------------------------
+_tbban as (
+select *
+    , (select sum(soluongban) from _databannew tam where tam.product_id = _databannew.product_id and tam.warehouse_id = _databannew.warehouse_id and tam.ngay between _databannew.ngay + interval '-3 day' and _databannew.ngay + interval '-1 day') ban3day
+    , (select sum(soluongban) from _databannew tam where tam.product_id = _databannew.product_id and tam.warehouse_id = _databannew.warehouse_id and tam.ngay between _databannew.ngay + interval '-7 day' and _databannew.ngay + interval '-1 day') ban7day 
+    , (select sum(soluongban) from _databannew tam where tam.product_id = _databannew.product_id and tam.warehouse_id = _databannew.warehouse_id and tam.ngay between _databannew.ngay + interval '-14 day' and _databannew.ngay + interval '-1 day') ban14day
+    , (select sum(soluongban) from _databannew tam where tam.product_id = _databannew.product_id and tam.warehouse_id = _databannew.warehouse_id and tam.ngay between _databannew.ngay + interval '-28 day' and _databannew.ngay + interval '-1 day') ban28day
+from _databannew 
+), 
+_nhapxuat as (
+select *, (select sum(tong_move) from _datatruyvetnew tam where tam.ngay>= _datatruyvetnew.ngay and tam.product_id = _datatruyvetnew.product_id and tam.warehouse_id = _datatruyvetnew.warehouse_id) move 
+from _datatruyvetnew
+), 
+---------------------------------------- Tính toán ----------------------------------------
+tab1 as (
+select 
+    _table.* 
+    , concat('[', default_code, '] ', product_product.name, '/', _table.warehouse_id) sanpham 
+    , stock_warehouse.name kho
+    , case when coalesce(ton, 0) - coalesce(move, 0)< 0 then 0 else  coalesce(ton, 0) - coalesce(move, 0) end ton 
+    , coalesce(move, 0) move 
+    , coalesce(ban3day, 0) ban3day
+    , coalesce(ban7day, 0) ban7day
+    , coalesce(ban14day, 0) ban14day
+    , coalesce(ban28day, 0) ban28day
+from 
+    _table 
+    left join _tonhientai on _tonhientai.product_id = _table.product_id and _tonhientai.warehouse_id = _table.warehouse_id
+    left join _tbban on _tbban.product_id = _table.product_id and _tbban.ngay = _table.ngay and _tbban.warehouse_id = _table.warehouse_id
+    left join _nhapxuat on _nhapxuat.product_id = _table.product_id and _nhapxuat.ngay = _table.ngay and _nhapxuat.warehouse_id = _table.warehouse_id
+    left join product_product on product_product.id = _table.product_id
+    left join stock_warehouse on stock_warehouse.id = _table.warehouse_id
+where 
+    date_trunc('month', _table.ngay) = coalesce([[ date_trunc('month', {{Date}}::date), ]] date_trunc('month', current_date))
+    and stock_warehouse.id is not null 
+    and stock_warehouse.phanloaikho= 'noibo'
+), 
+tab2 as (
+select 
+    * 
+    , case when ban3day!= 0 then ton*3/ban3day else ton end dio3 
+    , case when ban7day!= 0 then ton*7/ban7day else ton end dio7
+    , case when ban14day!= 0 then ton*14/ban14day else ton end dio14 
+    , case when ban28day!= 0 then ton*28/ban28day else ton end dio28
+from tab1 
+), 
+final as (
+select * 
+    , case 
+        when dio3>=15 and dio7>=15 and dio14>=15 and dio28>=15 then to_char(dio28, '999,999,999.9')
+        when dio3< 1 then concat('DIO3 - ', to_char(dio3, '0.9'))
+        when dio3<15 then concat('DIO3 - ', to_char(dio3, '999,999,999.9'))
+        when dio7<1 then concat('DIO7 - ', to_char(dio7, '0.9'))
+        when dio7< 15 then concat('DIO7 - ', to_char(dio7, '999,999,999.9'))
+        when dio14<1 then concat('DIO14 - ', to_char(dio14, '0.9'))
+        when dio14< 15 then concat('DIO14 - ', to_char(dio14, '999,999,999.9'))
+        when dio28<1 then concat('DIO28 - ', to_char(dio28, '0.9'))
+        when dio28< 15 then concat('DIO28 - ', to_char(dio28, '999,999,999.9'))
+    end dio  
+from tab2 
+) 
+select
+    sanpham
+    , to_char(ngay, 'dd-mm') ngay  
+    , dio
+from final
+union 
+select
+    sanpham
+    , '00-Kho' 
+    , kho
+from final
+order by ngay, sanpham

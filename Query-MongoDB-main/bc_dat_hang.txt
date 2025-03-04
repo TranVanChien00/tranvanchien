@@ -1,0 +1,11 @@
+select 
+    date_trunc('day', purchase_order.date_order + interval '7 hour') ngay 
+    , purchase_order_line.product_id 
+    , sum(purchase_order_line.product_qty) so_luong_dat
+    , sum(case when purchase_order_line.product_qty - purchase_order_line.qty_received< 0 or purchase_order.progress_state= 'hoan_thanh' then 0 else purchase_order_line.product_qty - purchase_order_line.qty_received end) dang_ve 
+    , sum(purchase_order_line.price_unit*purchase_order_line.product_qty) thanh_tien_dat 
+    , sum(purchase_order_line.price_unit*case when purchase_order_line.product_qty - purchase_order_line.qty_received< 0 or purchase_order.progress_state= 'hoan_thanh' then 0 else purchase_order_line.product_qty - purchase_order_line.qty_received end) thanh_tien_dang_ve 
+from 
+    purchase_order_line
+    left join purchase_order on purchase_order.id = purchase_order_line.order_id
+group by ngay, purchase_order_line.product_id  

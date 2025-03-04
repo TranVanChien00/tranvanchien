@@ -1,0 +1,101 @@
+
+with data_lead as (
+select 
+    coalesce(crm_lead.user_id, 0) user_id
+    , coalesce(crm_lead.product_category_id, 0) product_category_id
+    , coalesce(res_partner.country_type_id, 0) country_type_id
+    , max(sale_order.id) order_id 
+    , crm_lead.contact_creator_crm_group_id
+    , crm_lead.id lead_id
+    , data_mat.id mat_luon
+from 
+    crm_lead
+    left join res_partner on res_partner.id = crm_lead.partner_id
+    left join sale_order on sale_order.partner_id = res_partner.id 
+    left join res_users on res_users.id = crm_lead.user_id 
+    left join crm_team on crm_team.id = res_users.sale_team_id
+    left join crm_group on crm_group.id = res_users.crm_group_id 
+    left join crmf99_system on crmf99_system.id = crm_lead.crmf99_system_id
+    left join (
+            select distinct crm_lead.id 
+            from 
+                crm_lead 
+                left join crm_tag_rel on crm_lead.id = crm_tag_rel.lead_id 
+                left join crm_tag on crm_tag.id = crm_tag_rel.tag_id 
+            where 
+                crm_tag.name= 'Mất Luôn' 
+    ) data_mat on crm_lead.id = data_mat.id
+where 
+    crm_lead.opportunity_type = 'resale'
+    and crm_lead.active!= 'false'
+    and crm_lead.state!= 'failed'
+    and sale_order.summary_state in ('completed', 'shipping')
+group by 
+    crm_lead.id 
+    , res_partner.country_type_id
+    , data_mat.id 
+),
+
+tab_hsd as (
+select 
+    sale_order_line.order_id 
+    , sum(product_template.songaysudungthucte*sale_order_line.product_uom_qty) can_sd
+    , sum(product_template.songaysudungthucte*sale_order_line.product_uom_qty) +10 hsd
+from 
+    sale_order_line
+    inner join data_lead on data_lead.order_id = sale_order_line.order_id 
+    inner join product_product on product_product.id = sale_order_line.product_id 
+    inner join product_template on product_template.id = product_product.product_tmpl_id
+where coalesce(product_template.songaysudungthucte,0) != 0 
+group by sale_order_line.order_id
+),
+tab_len_don as (
+select 
+    data_lead.* 
+    , case when hsd is null then 180 else hsd end hsd 
+    , case when can_sd is null then 170 else can_sd end can_sd
+    , (case 
+                when sale_order.summary_state= 'shipping' or latest_done_out_datetime is null then sale_order.create_date + interval '5 day + 7 hour' 
+                else latest_done_out_datetime + interval '7 hour' 
+    end)::date len_don
+    , current_date - (case 
+                when sale_order.summary_state= 'shipping' or latest_done_out_datetime is null then sale_order.create_date + interval '5 day + 7 hour' 
+                else latest_done_out_datetime + interval '7 hour' 
+    end)::date + 1 D_len_don
+from 
+    data_lead 
+    inner join sale_order on sale_order.id = data_lead.order_id 
+    left join tab_hsd on tab_hsd.order_id = sale_order.id
+), 
+data_raw as (
+select * 
+, case
+    when mat_luon is not null or D_len_don> hsd + 125 then 'bo'
+    when D_len_don <= can_sd then 'can_cham'
+    when D_len_don<= hsd then 'can_mua'
+    when D_len_don<= hsd+10 then 'toi_uu_1'
+    when D_len_don<= hsd+20 then 'toi_uu_2'
+    when D_len_don<= hsd+45 then 'toi_uu_3'
+    when D_len_don<= hsd+125 then 'mat'
+end phan_loai 
+from tab_len_don 
+) 
+select
+    user_id 
+    , product_category_id
+    , country_type_id
+    , contact_creator_crm_group_id
+    , count(distinct lead_id) tong_data 
+    , count(distinct lead_id) filter(where phan_loai= 'bo') data_bo
+    , count(distinct lead_id) filter(where phan_loai= 'can_cham') data_can_cham
+    , count(distinct lead_id) filter(where phan_loai= 'can_mua') data_can_mua
+    , count(distinct lead_id) filter(where phan_loai= 'toi_uu_1') data_toi_uu1
+    , count(distinct lead_id) filter(where phan_loai= 'toi_uu_2') data_toi_uu2
+    , count(distinct lead_id) filter(where phan_loai= 'toi_uu_3') data_toiuu3
+    , count(distinct lead_id) filter(where phan_loai= 'mat') data_mat 
+from data_raw 
+group by 
+    user_id 
+    , product_category_id
+    , country_type_id
+    , contact_creator_crm_group_id

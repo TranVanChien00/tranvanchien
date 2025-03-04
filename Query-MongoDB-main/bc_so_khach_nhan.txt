@@ -1,0 +1,38 @@
+with data_raw as (
+select 
+    crm_lead.partner_id
+    , date_trunc('day',crm_lead.create_date + interval '7 hour') create_date
+    , date_trunc('day',crm_lead.date_open + interval '7 hour') date_open
+    , coalesce(crm_lead.contact_creator_crm_group_id, 0) mkt_crm_group_id
+    , coalesce(crm_lead.user_id, 0) user_id
+    , coalesce(crm_lead.team_id , 0) team_id 
+    , coalesce(crm_lead.crm_group_id, 0) crm_group_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id
+    , coalesce(crm_lead.product_category_id, 0) product_category_id 
+    from 
+        crm_lead 
+        left join res_partner on res_partner.id = crm_lead.partner_id
+    where 
+        1=1 
+        and crm_lead.opportunity_type = 'resale'
+) 
+select 
+    create_date
+    , date_open
+    , mkt_crm_group_id
+    , user_id
+    , team_id
+    , crm_group_id 
+    , country_type_id
+    , product_category_id
+    , count(distinct partner_id) so_khach
+from data_raw
+group by 
+    create_date
+    , date_open
+    , mkt_crm_group_id
+    , user_id
+    , team_id
+    , crm_group_id 
+    , country_type_id
+    , product_category_id

@@ -1,0 +1,450 @@
+with data_month as (
+select 
+        generate_series thang 
+        , row_number() over(order by generate_series desc) stt 
+        , case when generate_series = date_trunc('month', current_date) then date_part('day', generate_series + interval '1 month - 1 second')/date_part('day', current_date) else 1 end ty_le_du_kien
+        , case when date_part('month', generate_series)<10 then concat('T0', date_part('month', generate_series)) else concat('T', date_part('month', generate_series)) end ten 
+from generate_series(
+                    coalesce( [[concat({{thang}}, '/01')::date,]] date_trunc('month', current_date)) + interval '-1 month' 
+                    , coalesce([[concat({{thang}}, '/01')::date,]] date_trunc('month', current_date))
+                    , '1 month'::interval
+    )
+),
+data_raw_1 as ( 
+select 
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.latest_done_pick_datetime + interval '7 hour') ngay_van_chuyen 
+    , coalesce(sale_order.user_id, 0) user_id 
+    , coalesce(sale_order.team_id, 0) team_id 
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id 
+    , coalesce(sale_order_line.product_id, 0) product_id 
+    , coalesce(sale_order.product_category_id, 0) product_category_id
+    , sale_order.opportunity_type 
+    , res_partner.customer_type 
+    , sale_order.opportunity_type
+    , case 
+        when crm_group.crm_group_type= 'tmdt' then 'Thương mại điện tử'
+        when crm_group.crm_group_type= 'ban_buon_he_thong' then 'Bán buôn tổng'
+        when (res_partner.customer_type = 'wholesale' and sale_order.opportunity_type = 'sale') then 'Bán buôn hệ thống'
+        when crm_group.crm_group_type = 'sale' then 'Sale' 
+        when crm_group.crm_group_type = 'resale' then 'Resale' 
+        else 'Khác' 
+    end phan_loai_theo_cong_ty 
+    , sale_order.summary_state 
+    , sale_order_line.product_uom_qty so_luong_ban
+    , case when sale_order_line.ti_gia is not null and sale_order_line.ti_gia > 1 then sale_order_line.thanh_tien_noi_dia else price_subtotal end amount 
+    , sale_order.warehouse_id
+from 
+    sale_order_line
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join res_partner on res_partner.id = sale_order.partner_id 
+    left join crm_group on crm_group.id = sale_order.crm_group_id 
+
+where 
+    sale_order.latest_done_pick_datetime between (date_trunc('month', current_date) + interval '-5 month -7 hour') and (current_date + interval '17 hour + 00 minute - 1 second')
+    and sale_order_line.product_id= 483
+    and 
+        [[sale_order.latest_done_pick_datetime + interval '7 hour' between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' and ]]
+    (
+        sale_order.latest_done_pick_datetime + interval '7 hour' between date_trunc('month', current_date) + interval '-1 month' and date_trunc('month', current_date) + interval '1 month - 1 second'
+        [[ or sale_order.latest_done_pick_datetime + interval '7 hour' between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' ]]
+    )
+), 
+bc_ds_bh_nvc_line as (
+select 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_id
+    , warehouse_id
+    , product_category_id
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , coalesce(count(distinct order_id) filter(where summary_state= 'completed'), 0) don_thanh_cong
+    , coalesce(sum(amount) filter(where summary_state= 'completed'), 0) ds_thanh_cong
+    , coalesce(count(distinct order_id) filter(where summary_state= 'returned'), 0) don_hoan 
+    , coalesce(sum(amount) filter(where summary_state= 'returned'), 0) ds_hoan  
+    , coalesce(sum(so_luong_ban), 0) so_luong_ban
+from data_raw_1
+group by 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_id
+    , warehouse_id
+    , product_category_id
+),
+data_raw as ( 
+select 
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.latest_done_pick_datetime + interval '7 hour') ngay_van_chuyen 
+    , coalesce(sale_order.user_id, 0) user_id 
+    , coalesce(sale_order.team_id, 0) team_id 
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id 
+    , coalesce(sale_order.product_category_id, 0) product_category_id 
+    , sale_order.opportunity_type 
+    , res_partner.customer_type 
+    , sale_order.summary_state 
+    , sale_order.lydosaituyen
+    , apif99_delivery_order.evaled_postage_amount tam_tinh
+    , apif99_delivery_order.postage_amount tien_cuoc
+    , stock_warehouse.region
+    , case when position('1' in string_agg(case when sale_order.state_id = stock_warehouse_tinh_thanh_uu_tiens.apif99_res_country_state_id then '1' else '0' end, ', '))> 0 then 'dung_tuyen' else 'sai_tuyen' end kiem_tra
+    , case 
+    when crm_group.crm_group_type= 'tmdt' then 'Thương mại điện tử'
+    when crm_group.crm_group_type= 'ban_buon_he_thong' then 'Bán buôn tổng'
+    when (res_partner.customer_type = 'wholesale' and sale_order.opportunity_type = 'sale') then 'Bán buôn hệ thống'
+    when crm_group.crm_group_type = 'sale' then 'Sale' 
+    when crm_group.crm_group_type = 'resale' then 'Resale' 
+    else 'Khác' 
+    end phan_loai_theo_cong_ty 
+    , case when position( 'sua' in string_agg(phanloaisanpham, ', '))> 0 then 'sua' else 'thuong' end phan_loai_don
+    , sum(sale_order_line.product_uom_qty*coalesce((select value_float from ir_property where ir_property.res_id = concat('product.product,', product_product.id)), 0)) gia_von
+    , sum(sale_order_line.product_uom_qty) so_luong_ban
+    , case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount 
+    , stock_warehouse.id warehouse_id
+from 
+    sale_order_line
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join res_partner on res_partner.id = sale_order.partner_id 
+    left join stock_warehouse on stock_warehouse.id = sale_order.warehouse_id
+    left join stock_warehouse_tinh_thanh_uu_tiens on stock_warehouse_tinh_thanh_uu_tiens.stock_warehouse_id = stock_warehouse.id  
+    left join apif99_delivery_order on sale_order.latest_delivery_order_id = apif99_delivery_order.id
+    left join crm_group on crm_group.id = sale_order.crm_group_id 
+    left join product_product on product_product.id = sale_order_line.product_id
+    left join product_template on product_template.id = product_product.product_tmpl_id
+
+where 
+    sale_order.latest_done_pick_datetime between (date_trunc('month', current_date) + interval '-5 month -7 hour') and (current_date + interval '17 hour + 00 minute - 1 second')
+    and sale_order_line.product_id= 483
+    and 
+        [[sale_order.latest_done_pick_datetime + interval '7 hour' between concat({{thang}}, '/01')::date + interval '-2 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' and ]]
+    (
+        sale_order.latest_done_pick_datetime + interval '7 hour' between date_trunc('month', current_date) + interval '-2 month' and date_trunc('month', current_date) + interval '1 month - 1 second'
+        [[ or sale_order.latest_done_pick_datetime + interval '7 hour' between concat({{thang}}, '/01')::date + interval '-2 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' ]]
+    )
+group by 
+    sale_order.id 
+    , res_partner.id 
+    , apif99_delivery_order.id
+    , stock_warehouse.id 
+    , crm_group.id 
+), 
+bc_ds_bh_nvc as (
+select 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id
+    , warehouse_id
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , coalesce(count(distinct order_id) filter(where summary_state= 'returned'), 0) don_hoan
+    , coalesce(sum(amount) filter(where summary_state= 'returned'), 0) ds_hoan
+    , coalesce(count(distinct order_id) filter(where summary_state= 'completed'), 0) don_thanh_cong
+    , coalesce(sum(amount) filter(where summary_state= 'completed'), 0) ds_thanh_cong
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty= 'Thương mại điện tử'), 0) ds_cty_tmdt 
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty in ('Bán buôn hệ thống', 'Bán buôn tổng')), 0) ds_cty_ban_buon
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty= 'Sale'), 0) ds_cty_sale 
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty= 'Resale'), 0) ds_cty_resale
+    , coalesce(sum(amount) filter(where summary_state= 'returned'), 0) ds_hoan
+    , count(distinct order_id) filter(where kiem_tra= 'sai_tuyen') sai_tuyen 
+    , count(distinct order_id) filter(where kiem_tra= 'sai_tuyen' and lydosaituyen= 'kho_uu_tien_khong_du_ton') sai_tuyen_thieu_ton 
+    , sum(case when region in ('nam', 'bac') then case when summary_state in ('completed', 'returned') then tien_cuoc else tam_tinh end else 0 end) phi_ship_tam_tinh
+    , sum(case when region in ('nam', 'bac') then tien_cuoc else 0 end) phi_ship
+    , sum(amount) filter(where region in ('nam', 'bac')) ds_theo_ship 
+    , coalesce(count(distinct order_id) filter(where phan_loai_don= 'sua'), 0) don_sua 
+from data_raw 
+group by 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id
+    , warehouse_id
+), 
+cotmoczholding as (
+select 
+    case 
+        when cotmoczholding.name= 'Doanh số Zsolution' then 11 
+        when cotmoczholding.name= 'Doanh số Sale' then 12
+        when cotmoczholding.name= 'Doanh số Resale' then 13
+        when cotmoczholding.name= 'Doanh số Bán buôn' then 14
+        when cotmoczholding.name= 'Doanh số ZGlobal' then 15
+        when cotmoczholding.name= 'Doanh số Dr.Nutri' then 16 
+        when cotmoczholding.name= 'Doanh số Nhà máy' then 17 
+        when cotmoczholding.name= 'Doanh số TMĐT' then 18 
+        when cotmoczholding.name= 'Doanh số BB Nhập khẩu' then 19 
+    end tieuchi_id 
+    , thang 
+    , nam 
+    , quy 
+    , sum(cotmoccandat) kpi 
+    , cotmoczholding.name tentieuchi
+from cotmoczholding
+group by tieuchi_id, thang, cotmoczholding.name, thang, nam, quy ), 
+product_product as (
+select 
+    product_product.id  
+    , product_product.name 
+    , product_product.default_code 
+    , product_category.id product_category_id 
+    , product_template.phanloaisanpham
+    , product_template.type 
+    , product_product.active 
+    , coalesce((select value_float from ir_property where ir_property.res_id = concat('product.product,', product_product.id) order by id desc limit 1), 0) gia_von 
+from 
+    product_product
+    left join product_template on product_template.id = product_product.product_tmpl_id
+    left join product_category on product_category.id = product_template.categ_id
+where product_product.default_code  is not null
+and product_product.id= 483 
+), 
+data_kpi as (
+        select 
+            concat(nam, '/', thang, '/01')::date thang_kpi 
+            , sum(kpi) kpi 
+            , row_number() over(order by concat(nam, '/', thang, '/01')::date desc ) stt
+        from cotmoczholding
+        where 
+            cotmoczholding.tentieuchi!= 'Doanh số nước ngoài'
+            and 
+                [[ concat(nam, '/', thang, '/01')::date between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' and ]]
+            (
+                concat(nam, '/', thang, '/01')::date between date_trunc('month', current_date) + interval '-1 month' and date_trunc('month', current_date) + interval '1 month - 1 second'
+                [[ or concat(nam, '/', thang, '/01')::date between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' ]]
+            ) 
+        group by thang_kpi 
+), 
+data_1 as (
+    select 
+        date_trunc('month', ngay_van_chuyen) thang
+        , stock_warehouse.id warehouse_id
+        , coalesce(sum(tong_ds), 0) tong_ds
+        , coalesce(sum(ds_thanh_cong), 0) ds_thanh_cong
+        , coalesce(sum(ds_cty_sale), 0) ds_cty_sale
+        , coalesce(sum(ds_cty_resale), 0) ds_cty_resale
+        , coalesce(sum(ds_cty_ban_buon), 0) ds_cty_ban_buon
+        , coalesce(sum(ds_cty_tmdt), 0) ds_cty_tmdt
+        , coalesce(sum(tong_ds) filter(where crmf99_system_id not in(20, 32, 34)), 0) doanh_so_ke_hoach
+        , coalesce(sum(tong_don), 0) tong_don 
+        , coalesce(sum(ds_theo_ship), 0) ds_theo_ship 
+        , coalesce(sum(don_sua), 0) don_sua
+        , coalesce(sum(don_hoan), 0) don_hoan
+        , coalesce(sum(sai_tuyen), 0) sai_tuyen
+        , coalesce(sum(sai_tuyen_thieu_ton), 0) sai_tuyen_thieu_ton
+        , coalesce(sum(phi_ship), 0) phi_ship
+    from 
+        bc_ds_bh_nvc
+        left join stock_warehouse on stock_warehouse.id = bc_ds_bh_nvc.warehouse_id
+        left join product_category on product_category.id = bc_ds_bh_nvc.product_category_id 
+        left join crm_group on crm_group.id = bc_ds_bh_nvc.crm_group_id 
+    group by date_trunc('month', ngay_van_chuyen), stock_warehouse.id  
+), 
+data_2 as (
+    select
+        date_trunc('month', ngay_van_chuyen) thang
+        , stock_warehouse.id warehouse_id
+        , sum(so_luong_ban*gia_von) gia_von
+        , sum(tong_ds) tong_ds_gv
+    from 
+        data_month
+        left join bc_ds_bh_nvc_line on data_month.thang = date_trunc('month', bc_ds_bh_nvc_line.ngay_van_chuyen)
+        left join stock_warehouse on stock_warehouse.id = bc_ds_bh_nvc_line.warehouse_id
+        left join product_category on product_category.id = bc_ds_bh_nvc_line.product_category_id 
+        left join crm_group on crm_group.id = bc_ds_bh_nvc_line.crm_group_id 
+        left join product_product on product_product.id = bc_ds_bh_nvc_line.product_id 
+    group by date_trunc('month', ngay_van_chuyen), stock_warehouse.id  
+), 
+tab1 as (
+select 
+    data_1.thang 
+    , data_1.warehouse_id
+    , tong_ds
+    , case when date_part('month', data_1.thang)<10 then concat('T0', date_part('month', data_1.thang), ' - ', stock_warehouse.name ) else concat('T', date_part('month', data_1.thang), ' - ', stock_warehouse.name ) end ten 
+    , case when tong_ds - ds_cty_ban_buon - ds_cty_tmdt= 0 then 0 else ds_cty_ban_buon/(tong_ds - ds_cty_ban_buon - ds_cty_tmdt)::float end ty_le_bb_ban_le --
+    , case when tong_ds= 0 then 0 else ds_cty_ban_buon/tong_ds::float end ty_trong_bb --
+    , case when tong_ds= 0 then 0 else ds_cty_tmdt/tong_ds::float end ty_trong_tmdt --
+    , case when tong_ds= 0 then 0 else (tong_ds - ds_cty_ban_buon - ds_cty_tmdt)/tong_ds::float end ty_trong_ban_le --
+    , case when tong_don= 0 then 0 else tong_ds/tong_don::float end aov --
+    , case when tong_ds= 0 then 0 else ds_thanh_cong/tong_ds::float end ty_le_thanh_cong --
+    , case when tong_don= 0 then 0 else don_hoan/tong_don::float end ty_le_hoan --
+    , case when ds_cty_sale= 0 then 0 else ds_cty_resale/ds_cty_sale::float end ty_trong_resale --
+    , case when tong_don= 0 then 0 else sai_tuyen/tong_don::float end ty_le_sai_tuyen --
+    , case when tong_don= 0 then 0 else sai_tuyen_thieu_ton/tong_don::float end ty_le_thieu_ton  -- 
+    , case when ds_theo_ship= 0 then 0 else phi_ship/ds_theo_ship::float end ty_le_phi_ship --
+    , case when tong_don= 0 then 0 else don_sua/tong_don::float end  ty_le_don_sua --
+    , case when coalesce(data_2.tong_ds_gv, 0)= 0 then 0 else coalesce(data_2.gia_von, 0)/data_2.tong_ds_gv::float end ty_le_gia_von --
+from 
+    data_month 
+    left join data_1 on data_1.thang = data_month.thang 
+    left join data_2 on data_1.thang = data_2.thang and data_1.warehouse_id = data_2.warehouse_id
+    left join stock_warehouse on stock_warehouse.id = data_1.warehouse_id
+union 
+select 
+    data_1.thang 
+    , 0
+    , sum(tong_ds)
+    , case when date_part('month', data_1.thang)<10 then concat('T0', date_part('month', data_1.thang) ) else concat('T', date_part('month', data_1.thang)) end ten 
+    , case when sum(tong_ds - ds_cty_ban_buon - ds_cty_tmdt)= 0 then 0 else sum(ds_cty_ban_buon)/sum(tong_ds - ds_cty_ban_buon - ds_cty_tmdt)::float end ty_le_bb_ban_le --
+    , case when sum(tong_ds)= 0 then 0 else sum(ds_cty_ban_buon)/sum(tong_ds)::float end ty_trong_bb --
+    , case when sum(tong_ds)= 0 then 0 else sum(ds_cty_tmdt)/sum(tong_ds)::float end ty_trong_tmdt --
+    , case when sum(tong_ds)= 0 then 0 else sum(tong_ds - ds_cty_ban_buon - ds_cty_tmdt)/sum(tong_ds)::float end ty_trong_ban_le --
+    , case when sum(tong_don)= 0 then 0 else sum(tong_ds)/sum(tong_don)::float end aov --
+    , case when sum(tong_ds)= 0 then 0 else sum(ds_thanh_cong)/sum(tong_ds)::float end ty_le_thanh_cong --
+    , case when sum(tong_don)= 0 then 0 else sum(don_hoan)/sum(tong_don)::float end ty_le_hoan --
+    , case when sum(ds_cty_sale)= 0 then 0 else sum(ds_cty_resale)/sum(ds_cty_sale)::float end ty_trong_resale --
+    , case when sum(tong_don)= 0 then 0 else sum(sai_tuyen)/sum(tong_don)::float end ty_le_sai_tuyen --
+    , case when sum(tong_don)= 0 then 0 else sum(sai_tuyen_thieu_ton)/sum(tong_don)::float end ty_le_thieu_ton  -- 
+    , case when sum(ds_theo_ship)= 0 then 0 else sum(phi_ship)/sum(ds_theo_ship)::float end ty_le_phi_ship --
+    , case when sum(tong_don)= 0 then 0 else sum(don_sua)/sum(tong_don)::float end  ty_le_don_sua --
+    , case when coalesce(sum(data_2.tong_ds_gv), 0)= 0 then 0 else coalesce(sum(data_2.gia_von), 0)/sum(data_2.tong_ds_gv)::float end ty_le_gia_von --
+from 
+    data_month 
+    left join data_1 on data_1.thang = data_month.thang 
+    left join data_2 on data_1.thang = data_2.thang and data_1.warehouse_id = data_2.warehouse_id
+group by data_1.thang 
+), 
+tab_format as (
+select 
+    ten 
+    , '01. Tỷ lệ tồn kho lấp đầy đơn' chi_tieu
+    , ty_le_thieu_ton gia_tri 
+    , 1 phan_loai
+from tab1 
+union 
+select 
+    ten 
+    , '02. Tỷ trọng loại đơn sữa' chi_tieu
+    , ty_le_don_sua gia_tri 
+    , 1 phan_loai
+from tab1 
+union 
+select 
+    ten 
+    , '03. Tỷ trọng chi phí vận chuyển' chi_tieu
+    , ty_le_phi_ship gia_tri 
+    , 1 phan_loai
+from tab1 
+union 
+select 
+    ten 
+    , '04. Tỷ trọng đơn sai tuyển' chi_tieu
+    , ty_le_sai_tuyen gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '07. Tỷ trọng bán buôn/bán lẻ' chi_tieu
+    , ty_le_bb_ban_le gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '08. Tỷ trọng cơ cấu nhóm ngành' chi_tieu
+    , null gia_tri 
+    , null phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '08.a. Bán buôn' chi_tieu
+    , ty_trong_bb gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '08.b. Bán lẻ' chi_tieu
+    , ty_trong_ban_le gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '08.c. TMĐT' chi_tieu
+    , ty_trong_tmdt gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '10. AOV' chi_tieu
+    , aov gia_tri 
+    , 2 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '11. Tỷ trọng Resale' chi_tieu
+    , ty_trong_resale gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '12. Tỷ lệ thành công' chi_tieu
+    , ty_le_thanh_cong gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '13. Tỷ lệ hủy/hoàn' chi_tieu
+    , ty_le_hoan gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '14. Tỷ trọng giá vốn' chi_tieu
+    , ty_le_gia_von gia_tri 
+    , 1 phan_loai
+from tab1
+union 
+select 
+    ten 
+    , '05. Tỷ lệ hoàn thành kế hoạch'
+    , sum(doanh_so_ke_hoach)/(select kpi from data_kpi where thang_kpi= data_month.thang )::float
+    , 1 
+from 
+    data_month 
+    left join data_1 on data_1.thang = data_month.thang 
+group by ten, data_month.thang 
+union
+select 
+    ten 
+    , '06. Tỷ lệ tăng trưởng doanh thu'
+    , case when warehouse_id= 0 then tong_ds/(select sum(tong_ds) from data_1 where data_1.thang + interval '1 month' = tab1.thang)::float else tong_ds/(select sum(tong_ds) from data_1 where data_1.thang + interval '1 month' = tab1.thang and data_1.warehouse_id = tab1.warehouse_id)::float end
+    , 1 
+from tab1 
+union
+select 
+    ten 
+    , '09. Khả năng hoàn thành mục tiêu'
+    , sum(doanh_so_ke_hoach)*ty_le_du_kien/(select kpi from data_kpi where thang_kpi= data_month.thang )::float
+    , 1 
+from 
+    data_month 
+    left join data_1 on data_1.thang = data_month.thang 
+group by ten, data_month.thang, ty_le_du_kien 
+) 
+select 
+    ten 
+    , chi_tieu
+    , case 
+            when phan_loai= 1 then concat(case when gia_tri*100<1 then to_char(gia_tri*100, '0.9') else to_char(gia_tri*100, '9,999.9') end, '%')
+            else case when gia_tri<1 then to_char(gia_tri, '0.99') else to_char(gia_tri, '9,9999,999,999') end
+        end gia_tri
+from tab_format 

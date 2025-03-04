@@ -1,0 +1,9 @@
+[[ to_char(sale_order.create_date + interval '7 hour', 'YYYY/MM') =  {{thang}} and ]] 
+                        (
+                                [[ sale_order.create_date between ({{Start_date}}::date + INTERVAL '-7 hour') and ({{End_date}}::date + INTERVAL '17 hour + 00 minute - 1 second')  and ]] 
+                            (
+                                sale_order.create_date between (date_trunc('month', current_date) + INTERVAL '-7 hour') and (current_date + INTERVAL '17 hour + 00 minute - 1 second')
+                                [[ or sale_order.create_date between ({{Start_date}}::date + INTERVAL '-7 hour') and ({{End_date}}::date + INTERVAL '17 hour + 00 minute - 1 second') ]]
+                            )
+                            [[ or to_char(sale_order.create_date + interval '7 hour', 'YYYY/MM') =  {{thang}} ]]
+                        )

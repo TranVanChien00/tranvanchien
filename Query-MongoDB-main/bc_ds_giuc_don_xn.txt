@@ -1,0 +1,77 @@
+with data_raw as (
+select
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime
+    , sale_order.user_id
+    , sale_order.team_id
+    , sale_order.crm_group_id
+    , sale_order.crmf99_system_id
+    , res_partner.country_type_id
+    , coalesce( case when product_category.active='true' and product_category.category_type= 'primary' then sale_order.product_category_id else 0 end, 0) product_category_id
+    , utm_source.channel_id
+    , sale_order.opportunity_type
+    , res_partner.customer_type
+    , sale_order.summary_state
+    , sale_order_operating.state
+    , sale_order_operating.id operating_id
+    , case 
+        when crm_group.crm_group_type= 'tmdt' then 'Thương mại điện tử'
+        when crm_group.crm_group_type= 'ban_buon_he_thong' then 'Bán buôn tổng'
+        when (res_partner.customer_type = 'wholesale' and  sale_order.opportunity_type = 'sale')  then 'Bán buôn hệ thống' 
+        when crm_group.crm_group_type = 'sale' then 'Sale'
+        when crm_group.crm_group_type = 'resale' then 'Resale'
+        else 'Khác'
+    end phan_loai_theo_cong_ty
+    , case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount
+    , case 
+		when res_partner.customer_type= 'wholesale' then 'Sỉ'
+		when  res_partner.customer_type= 'tmtd' then 'Thương mại điện tử'
+		else 'Lẻ'
+	end phan_loai_khach
+from sale_order 
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join utm_source on utm_source.id = sale_order.source_id
+    left join product_category on product_category.id = sale_order.product_category_id 
+    left join crm_group on crm_group.id = sale_order.crm_group_id 
+    left join sale_order_operating  on sale_order.id = sale_order_operating.sale_order_id
+    left outer join sale_order_operating o2 on sale_order.id = o2.sale_order_id and sale_order_operating.id < o2.id
+where 
+    sale_order.summary_state not in('rfq','cancel')
+    and o2.id is null 
+ ) 
+ 
+ select     
+    confirmed_datetime
+    , user_id
+    , team_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id
+    , crmf99_system_id
+    , phan_loai_khach
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , count(distinct case when summary_state= 'completed' then order_id else 0 end) don_thanh_cong 
+    , sum(case when summary_state= 'completed' then amount else 0 end) ds_thanh_cong
+    , coalesce(count(distinct order_id) filter(where operating_id is not null), 0) don_chuyen
+    , coalesce(sum(amount) filter(where operating_id is not null), 0) ds_chuyen
+    , coalesce(sum(amount) filter(where state = '5_chuyen_hoan_tai_kho'), 0) ds_huy_kho
+    , coalesce(sum(amount) filter(where state in ('6_chuyen_hoan_chua_ve', '7_chuyen_hoan_da_ve') ), 0) ds_hoan_chuyen
+    , coalesce(sum(amount) filter(where state in ('1_chua_xu_ly','2_dang_xu_ly','2_1_dang_xu_ly_luu_cho_phat') ), 0) ds_tren_duong
+    , coalesce(sum(amount) filter(where state = '2_1_dang_xu_ly_luu_cho_phat'), 0) ds_den_buu_cuc
+, coalesce(sum(amount) filter(where state = '4_thanh_cong_da_import'), 0) ds_tc_da_import
+    , coalesce(sum(amount) filter(where state = '3_thanh_cong_chua_import'), 0) ds_tc_chua_import
+    , coalesce(sum(amount) filter(where state = '7_chuyen_hoan_da_ve'), 0) ds_hoan_da_ve
+    , 'zh' db_source
+ from data_raw
+ group by 
+    confirmed_datetime
+    , user_id
+    , team_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id
+    , crmf99_system_id
+    , phan_loai_khach

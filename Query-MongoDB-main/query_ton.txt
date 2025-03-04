@@ -1,0 +1,87 @@
+with data_product as (
+select 
+	to_char(stock_move_line.date + interval '7 hour', 'yyyy/mm/dd')::date as ngay
+	, stock_move_line.product_id
+    , location_1.warehouse_id as tu_kho
+	, location_2.warehouse_id as den_kho
+	, stock_move_line.qty_done
+	, location_1.name as tu
+	, location_2.name as den
+	, stock_picking.sale_id
+	, stock_picking.origin
+	, product_template.type loai_san_pham 
+from 
+			stock_move_line 
+			left join product_product on product_product.id = stock_move_line.product_id 
+			left join product_template on product_template.id = product_product.product_tmpl_id 
+			left join report_product_category on report_product_category.id = product_template.categ_id
+			left join stock_picking on stock_picking.id = stock_move_line.picking_id
+			left join stock_location location_1 on stock_move_line.location_id = location_1.id 
+			left join stock_location location_2 on stock_move_line.location_dest_id = location_2.id 
+			left join stock_move on stock_move.id = stock_move_line.move_id 
+where 
+	stock_move_line.state= 'done'
+	and (location_1.name= 'Kho' or location_2.name= 'Kho' or location_1.name= 'Stock' or location_2.name= 'Stock')
+	and 
+		[[ stock_move_line.date >= {{Start_date}} + interval '-7 hour' and ]]  
+    (
+        stock_move_line.date between (current_date + interval '-7 hour') and (current_date + interval '17 hour - 1 second') 
+        [[ or stock_move_line.date >= {{Start_date}} + interval '-7 hour' ]]
+    )
+), 
+
+nhap_xuat as (
+select ngay, tu_kho as warehouse_id, -qty_done so_luong, 'xuat' phan_loai
+from data_product
+where (tu= 'Kho' or tu= 'Stock') and loai_san_pham= 'product'
+union 
+select ngay, den_kho as warehouse_id, qty_done so_luong, 'nhap' phan_loai
+from data_product
+where (den= 'Kho' or den= 'Stock') and loai_san_pham= 'product'),
+
+so_luong_1 as (
+select 
+    sum(so_luong) so_luong 
+    , sum(so_luong) filter(where phan_loai= 'nhap') so_luong_nhap 
+    , sum(so_luong) filter(where phan_loai= 'xuat') so_luong_xuat
+from 
+    nhap_xuat
+    left join stock_warehouse on stock_warehouse.id = nhap_xuat.warehouse_id
+    left join report_stock_warehouse on report_stock_warehouse.id = stock_warehouse.id 
+where
+        [[ ngay between ({{End_date}}::date + interval '17 hour') and (current_date + interval '17 hour - 1 second') and ]] 
+    (
+        ngay between (current_date + interval '17 hour') and (current_date + interval '27 hour - 1 second')
+        [[ or ngay between ({{End_date}}::date + interval '17 hour') and (current_date + interval '17 hour - 1 second') ]]
+    )), 
+so_luong_2 as (
+select 
+    sum(so_luong) so_luong 
+    , sum(so_luong) filter(where phan_loai= 'nhap') so_luong_nhap 
+    , sum(so_luong) filter(where phan_loai= 'xuat') so_luong_xuat
+from 
+    nhap_xuat
+    left join stock_warehouse on stock_warehouse.id = nhap_xuat.warehouse_id
+    left join report_stock_warehouse on report_stock_warehouse.id = stock_warehouse.id 
+where
+        [[ ngay between ({{Start_date}}::date + interval '-7 hour') and ({{End_date}}::date + interval '17 hour - 1 second') and ]] 
+    (
+        ngay between (current_date + interval '-7 hour') and (current_date + interval '17 hour - 1 second')
+        [[ or ngay between ({{Start_date}}::date + interval '-7 hour') and ({{End_date}}::date + interval '17 hour - 1 second') ]]
+    ))
+select 
+    coalesce(sum(stock_quant.quantity), 0) "Tồn hiện tại"
+    , coalesce(sum(stock_quant.quantity), 0) - coalesce((select so_luong from so_luong_1), 0) - coalesce((select so_luong from so_luong_2), 0) "Tồn đầu kỳ"
+    , coalesce(sum(stock_quant.quantity), 0) - coalesce((select so_luong from so_luong_1), 0) "Tồn cuối kỳ"
+from 
+    stock_quant 
+    left join stock_location on stock_location.id = stock_quant.location_id
+    left join product_product on product_product.id = stock_quant.product_id
+    left join product_template on product_template.id= product_product.product_tmpl_id
+    left join report_product_category on report_product_category.id = product_template.categ_id
+    left join stock_warehouse on stock_warehouse.id = stock_location.warehouse_id
+    left join report_stock_warehouse on report_stock_warehouse.id = stock_warehouse.id 
+where  
+    stock_location.name in ('Kho', 'Stock') 
+    and report_stock_warehouse.id != 83
+    and product_template.type= 'product'

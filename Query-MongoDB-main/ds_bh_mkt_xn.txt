@@ -1,0 +1,52 @@
+with data_raw as (
+select
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') ngay_xn 
+    , coalesce(sale_order.contact_creator_id, 0) user_id
+    , coalesce(sale_order.marketing_team_id, 0) team_id   
+    , coalesce(sale_order.contact_creator_crm_group_id, 0) crm_group_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id
+    , coalesce(sale_order.product_category_id, 0) product_category_id
+    , coalesce(utm_source.channel_id, 0) channel_id 
+    , sale_order.opportunity_type
+    , res_partner.customer_type
+    , sale_order.summary_state
+    , case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount
+from sale_order 
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join utm_source on utm_source.id = sale_order.source_id
+where 
+    sale_order.summary_state not in('rfq','cancel')
+ ) 
+ 
+ select     
+    ngay_xn
+    , user_id
+    , team_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , count(distinct case when summary_state= 'completed' then order_id else 0 end) don_thanh_cong 
+    , sum(case when summary_state= 'completed' then amount else 0 end) ds_thanh_cong
+    , sum(case when opportunity_type= 'sale' then amount else 0 end) ds_sale 
+    , sum(case when opportunity_type= 'resale' then amount else 0 end) ds_resale 
+    , sum(case when customer_type is null or customer_type != 'wholesale' then amount else 0 end) ds_ban_le ------theo loại khách 
+    , sum(case when opportunity_type= 'sale' and (customer_type is null or customer_type != 'wholesale') then amount else 0 end) ds_sale_le 
+    , sum(case when opportunity_type= 'resale' and (customer_type is null or customer_type != 'wholesale') then amount else 0 end) ds_resale_le 
+    , sum(case when opportunity_type= 'sale' and summary_state='completed' then amount else 0 end) ds_sale_tc 
+    , sum(case when opportunity_type= 'resale' and summary_state='completed' then amount else 0 end) ds_resale_tc 
+    , sum(case when opportunity_type= 'sale' and summary_state='completed' and (customer_type is null or customer_type != 'wholesale') then amount else 0 end) ds_sale_le_tc 
+    , sum(case when opportunity_type= 'resale' and summary_state='completed' and (customer_type is null or customer_type != 'wholesale') then amount else 0 end) ds_resale_le_tc
+    , sum(amount) filter(where summary_state= 'returned') ds_hoan
+ from data_raw
+ group by 
+    ngay_xn
+    , user_id
+    , team_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id

@@ -1,0 +1,12 @@
+select 
+    ctkm.code 
+    , ctkm.typeof_promotion
+    , date_trunc('day', ctkm.ngay_bat_dau + interval '7 hour') ngay_bat_dau
+    , date_trunc('day', ctkm.ngay_ket_thuc + interval '7 hour') ngay_ket_thuc
+    , product_donate_id
+from 
+    ctkm_sanpham
+    left join ctkm on ctkm.id = ctkm_sanpham.ctkm_id 
+where 
+    is_dms= 'true' 
+    and active= 'true'

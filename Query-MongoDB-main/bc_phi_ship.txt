@@ -1,0 +1,56 @@
+with data_raw as ( 
+select 
+    sale_order.id order_id 
+    , sale_order.lydosaituyen
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime 
+    , coalesce(sale_order.user_id, 0) user_id 
+    , coalesce(sale_order.team_id, 0) team_id 
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id 
+    , sale_order.crmf99_system_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id 
+    , coalesce( sale_order.product_category_id, 0) product_category_id 
+    , sale_order.summary_state 
+    , case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount 
+    , apif99_delivery_order.evaled_postage_amount tam_tinh
+    , apif99_delivery_order.postage_amount tien_cuoc
+    , stock_warehouse.region
+    , case when position('1' in string_agg(case when sale_order.state_id = stock_warehouse_tinh_thanh_uu_tiens.apif99_res_country_state_id then '1' else '0' end, ', '))> 0 then 'dung_tuyen' else 'sai_tuyen' end kiem_tra
+from 
+    sale_order
+    left join res_partner on res_partner.id = sale_order.partner_id 
+    left join stock_warehouse on stock_warehouse.id = sale_order.warehouse_id
+    left join stock_warehouse_tinh_thanh_uu_tiens on stock_warehouse_tinh_thanh_uu_tiens.stock_warehouse_id = stock_warehouse.id  
+    left join apif99_delivery_order on sale_order.latest_delivery_order_id = apif99_delivery_order.id
+where 
+    sale_order.summary_state not in('rfq','cancel') 
+    and sale_order.latest_done_pick_datetime between (date_trunc('month', current_date) + INTERVAL '-12 month -7 hour') and (current_date + INTERVAL '17 hour + 00 minute - 1 second')
+group by 
+    sale_order.id 
+    , res_partner.country_type_id
+    , apif99_delivery_order.id
+    , stock_warehouse.region
+) 
+select 
+    confirmed_datetime 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id 
+    , crmf99_system_id 
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , count(distinct order_id) filter(where kiem_tra= 'sai_tuyen') sai_tuyen 
+    , count(distinct order_id) filter(where kiem_tra= 'sai_tuyen' and lydosaituyen= 'kho_uu_tien_khong_du_ton') sai_tuyen_thieu_ton 
+    , sum(case when region in ('nam', 'bac') then case when summary_state in ('completed', 'returned') then tien_cuoc else tam_tinh end else 0 end) phi_ship_tam_tinh
+    , sum(case when region in ('nam', 'bac') then tien_cuoc else 0 end) phi_ship
+    , sum(amount) filter(where region in ('nam', 'bac')) ds_theo_ship 
+from data_raw 
+group by 
+    confirmed_datetime 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id 
+    , crmf99_system_id 

@@ -1,0 +1,73 @@
+with data_raw as (
+select 
+    HE.id ticket_id,
+    date_trunc('day', HE.expensed_datetime + interval '7 hour') expensed_datetime,
+    HE.source_id,
+    utm_source.user_id,
+    utm_source.marketing_team_id team_id,
+    utm_source.crm_group_id,
+    utm_source.crmf99_system_id, 
+    utm_source.channel_id,
+    HE.product_category_id,
+    HE.country_type_id,
+    case 
+        when product_product.default_code = 'CP-1653709792' then 'KOL'
+        when product_product.default_code = 'CP-1653709817' then 'Nguyên liệu'
+        when product_product.default_code = 'CP' then 'Chi phí'
+    else 'Khác' end phan_loai,
+    HE.total_amount amount,
+     coalesce(HE.n_comments) as fbmess_cmt,
+    coalesce(HE.n_messages) as fbmess_mess,
+    coalesce(HE.n_fbcd_comments,0) as fbcd_cmt,
+    (coalesce(HE.n_comments) + coalesce(HE.n_messages) + coalesce(HE.n_fbcd_comments,0)) as total_cmt_mess,
+    HE.click_through_rate,
+    HE.cost_per_mille,
+    HE.impressions,
+    HE.cpc as cost_per_click,
+    HE.clicks,
+    HE."video_avg_timeWatched" as video_avg_timewatched,
+    HE.campaign_id
+from hr_daily_expense as HE 
+    left join utm_source on  HE.source_id = utm_source.id 
+    left join product_product on product_product.id = HE.expense_category_id 
+where   
+     HE.state in ('confirmed','to_confirm')
+) 
+select 
+    expensed_datetime
+    , source_id
+    , user_id
+    , team_id
+    , product_category_id
+    , crm_group_id
+    , crmf99_system_id
+    , channel_id
+    , country_type_id
+    , campaign_id
+    , sum(amount) filter(where phan_loai!= 'KOL') tong_chi_phi
+    , sum(amount) filter(where phan_loai= 'Chi phí') chi_phi 
+    , sum(amount) filter(where phan_loai= 'Nguyên liệu') cp_nguyen_lieu 
+    , sum(amount) filter(where phan_loai= 'KOL') cp_kol 
+    , sum(fbmess_cmt) fbmess_cmt
+    , sum(fbmess_mess) fbmess_mess
+    , sum(fbcd_cmt) fbcd_cmt
+    , sum(click_through_rate) click_through_rate
+    , sum(cost_per_mille) cost_per_mille
+    , sum(impressions) impressions
+    , sum(clicks) clicks
+    , sum(video_avg_timewatched) video_avg_timewatched
+    , sum(cost_per_click) cost_per_click
+    , count( distinct ticket_id) n_ticket
+    , 'zh' db_source
+from data_raw
+group by 
+    expensed_datetime
+    , source_id
+    , user_id
+    , team_id
+    , product_category_id
+    , crm_group_id
+    , crmf99_system_id
+    , channel_id
+    , country_type_id
+    , campaign_id

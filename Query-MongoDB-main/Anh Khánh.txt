@@ -1,0 +1,42 @@
+select 
+    sale_order.name "BSO"
+    , name_vn.value  "Sản phẩm"
+    , sum(sale_order_line.product_uom_qty) "Số lượng bán"
+    , sale_order_line.price_unit "Giá bán"
+    , sum(fixed_amount_discount) "Chiết khấu"
+    , sum(sale_order_line.thanh_tien_noi_dia) "Thành tiền trên line"
+    , sum(sale_order_line.thanh_tien_noi_dia)/sum(sale_order_line.product_uom_qty)::float "Giá BQ sau CK"
+    , stock_warehouse.name "Kho xuất"
+    , res_users.name "Nhân viên kinh doanh"
+    , crm_group.name "Công ty bán hàng"
+    , crmf99_system.name "Hệ thống"
+    , sale_order.summary_state
+    , sale_order.latest_done_pick_datetime + interval '7 hour' "Ngày vận chuyển"
+    , res_partner.name "Khách hàng"
+    , sale_order.phone "SĐT nhận hàng"
+    , sale_order.partner_address_details "Địa chỉ chi tiết nhận"
+from sale_order_line 
+left join sale_order on sale_order.id = sale_order_line.order_id 
+left join res_users on res_users.id = sale_order.user_id 
+left join product_product on product_product.id = sale_order_line.product_id 
+left join crm_group on crm_group.id = sale_order.crm_group_id 
+left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id 
+left join stock_warehouse on sale_order.warehouse_id = stock_warehouse.id 
+left join res_partner on res_partner.id = sale_order.partner_id 
+left join product_template on product_template.id = product_product.product_tmpl_id 
+left join product_category on product_category.id = product_template.categ_id 
+{{snippet: join_name_product}}
+where 
+    sale_order.confirmed_datetime + interval '7 hour'>= '2024-10-01'
+    and (product_product.default_code in ('114962') or product_category.id= 680) 
+    and crmf99_system.id= 18
+    and sale_order.summary_state not in ('rfq', 'cancel', 'returned')
+group by
+    sale_order.id 
+    , sale_order_line.price_unit
+    , stock_warehouse.name 
+    , res_users.name 
+    , crm_group.name 
+    , crmf99_system.name
+    , res_partner.name 
+    , name_vn.value

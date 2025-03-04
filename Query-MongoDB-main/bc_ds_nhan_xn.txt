@@ -1,0 +1,45 @@
+with data_raw as (
+select 
+    case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount 
+    , sale_order.id order_id 
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime
+    , coalesce(crm_group.id, 0) crm_group_id 
+    , coalesce(crm_team.id, 0) team_id 
+    , coalesce(res_users.id, 0) user_id 
+    , coalesce(product_category.id, 0) product_category_id 
+    , coalesce(country_type.id, 0) country_type_id 
+    , coalesce(utm_source.channel_id, 0) channel_id
+from 
+    sale_order
+    left join res_partner on res_partner.id = sale_order.partner_id
+    left join crm_group on crm_group.id = res_partner.crm_lead_crm_group_id
+    left join res_users on res_users.id = res_partner.crm_lead_user_id
+    left join crm_team on crm_team.id = res_partner.crm_lead_team_id
+    left join product_category on product_category.id = sale_order.product_category_id
+    left join country_type on country_type.id = res_partner.country_type_id
+    left join utm_source on utm_source.id = sale_order.source_id 
+where 
+    sale_order.confirmed_datetime is not null
+    and sale_order.summary_state = 'completed'
+    and sale_order.opportunity_type = 'sale'
+    and res_partner.crm_lead_crm_group_id is not null
+    and (res_partner.customer_type is null or res_partner.customer_type != 'wholesale' )
+) 
+
+select 
+    confirmed_datetime
+    , user_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id
+    , count(distinct order_id) don_nhan 
+    , sum(amount) ds_nhan 
+from data_raw
+group by 
+    confirmed_datetime
+    , user_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id

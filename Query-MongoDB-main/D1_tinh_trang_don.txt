@@ -1,0 +1,135 @@
+with data_raw as (
+select
+    sale_order.id order_id 
+    , case when sale_order_line.ti_gia is not null and sale_order_line.ti_gia > 1 then sale_order_line.thanh_tien_noi_dia else price_subtotal end doanh_so 
+    , crmf99_system.name system_name 
+    , crm_group.name group_name 
+    , crm_team.name team_name 
+    , res_users.name user_name 
+    , product_category.name category_name 
+    , country_type.name country_name 
+    , group_mkt.name group_mkt_name 
+    , system_mkt.name system_mkt_name
+    , user_mkt.name user_mkt_name
+    , team_mkt.name team_mkt_name
+    , sale_order.opportunity_type 
+    , sale_order.summary_state
+    , crmf99_system.id system_id 
+    , crm_group.id group_id 
+    , crm_team.id team_id 
+    , res_users.id user_id 
+    , product_category.id category_id 
+    , country_type.id country_id 
+    , group_mkt.id group_mkt_id 
+    , system_mkt.id system_mkt_id
+    , user_mkt.id user_mkt_id
+    , team_mkt.id team_mkt_id
+    , res_users.crm_position position_name
+    , (sale_order.create_date + interval '7 hour')::date create_date
+    , case 
+		when res_partner.customer_type= 'wholesale' then 'Sỉ'
+		when  res_partner.customer_type= 'tmtd' then 'Thương mại điện tử'
+		else 'Lẻ'
+	end phan_loai_khach
+	, sale_order.lydohoanhang_id
+from 
+    sale_order_line 
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join crm_lead on crm_lead.id = sale_order.opportunity_id
+    left join crm_team on crm_team.id = sale_order.team_id  
+    left join utm_source on utm_source.id = sale_order.source_id
+    left join res_users on res_users.id = sale_order.user_id  
+    left join crm_group on crm_group.id = sale_order.crm_group_id    
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id 
+    left join product_category on product_category.id = sale_order.product_category_id
+    left join country_type on country_type.id = res_partner.country_type_id
+    left join crm_group group_mkt on group_mkt.id = sale_order.contact_creator_crm_group_id
+    left join crmf99_system system_mkt on system_mkt.id = crm_group.crmf99_system_id 
+    left join res_users user_mkt on user_mkt.id = sale_order.contact_creator_id
+    left join crm_team team_mkt on team_mkt.id = sale_order.marketing_team_id 
+where 
+    sale_order.create_date between (date_trunc('month', current_date) + interval '- 12 month - 7 hour') and current_date
+    and sale_order.create_date = @create_date
+    and crmf99_system.id = @system_id 
+    and crm_group.id = @group_id 
+    and crm_team.id = @team_id 
+    and res_users.id = @user_id 
+    and product_category.id = @category_id 
+    and country_type.id = @country_id 
+    and group_mkt.id = @group_mkt_id 
+    and system_mkt.id = @system_mkt_id
+    and user_mkt.id = @user_mkt_id
+    and team_mkt.id = @team_mkt_id
+---limit 100
+) 
+select
+    create_date
+    , system_id
+    , group_id
+    , team_id
+    , user_id
+    , category_id
+    , country_id
+    , group_mkt_id
+    , system_mkt_id
+    , user_mkt_id 
+    , team_mkt_id
+    , system_name
+    , group_name
+    , team_name
+    , user_name
+    , category_name
+    , country_name
+    , group_mkt_name
+    , system_mkt_name
+    , user_mkt_name 
+    , team_mkt_name
+    , position_name 
+    , case when opportunity_type= 'sale' then 'Tổng sale' when opportunity_type= 'resale' then 'Tổng resale' end loai_don 
+    , 'Tổng' tong 
+    , coalesce( sum(doanh_so), 0) ds_chot 
+    , coalesce( sum(case when summary_state not in  ('rfq','cancel') then doanh_so end), 0) ds_xac_nhan 
+    , coalesce( count( distinct order_id), 0) don_chot 
+    , coalesce( count( distinct case when summary_state not in  ('rfq','cancel') then order_id end), 0) don_xac_nhan
+    , coalesce( sum(case when summary_state= 'completed' then doanh_so end), 0) ds_thanh_cong
+    , coalesce( sum(case when summary_state= 'rfq' then doanh_so end), 0) ds_bao_gia
+    , coalesce( sum(case when summary_state= 'cancel' then doanh_so end), 0) ds_huy
+    , coalesce( sum(case when summary_state in ('shipping','reshipping') then doanh_so end), 0) ds_dang_giao
+    , coalesce( sum(case when summary_state in ('returning','returned') then doanh_so end), 0) ds_hoan
+    , coalesce( sum(case when summary_state= 'confirmed' then doanh_so end), 0) ds_da_xac_nhan
+    , phan_loai_khach
+    , coalesce(count(distinct case when summary_state in ('returned', 'returning') then order_id end), 0) hoan 
+    , coalesce(count(distinct case when summary_state in ('returned', 'returning') and lydohoanhang_id= 1 then order_id end), 0) buu_dien 
+    , coalesce(count(distinct case when summary_state in ('returned', 'returning') and lydohoanhang_id= 2 then order_id end), 0) sale 
+    , coalesce(count(distinct case when summary_state in ('returned', 'returning') and lydohoanhang_id= 3 then order_id end), 0) hoan_kho
+    , coalesce(count(distinct case when summary_state in ('returned', 'returning') and lydohoanhang_id= 4 then order_id end), 0) van_don
+    , coalesce(count(distinct case when summary_state in ('returned', 'returning') and lydohoanhang_id is null then order_id end), 0) hoan_khac
+from data_raw
+group by
+    create_date
+    , system_id
+    , group_id
+    , team_id
+    , user_id
+    , category_id
+    , country_id
+    , group_mkt_id
+    , system_mkt_id
+    , system_name
+    , group_name
+    , team_name
+    , user_name
+    , category_name
+    , country_name
+    , group_mkt_name
+    , system_mkt_name
+    , loai_don
+    , phan_loai_khach
+    , user_mkt_id 
+    , team_mkt_id
+    , user_mkt_name 
+    , team_mkt_name
+    , position_name 
+    
+----system_id, group_id, team_id, user_id, category_id, country_id, group_mkt_id, system_mkt_id

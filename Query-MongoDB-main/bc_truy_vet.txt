@@ -1,0 +1,47 @@
+with data_raw as (
+select 
+    stock_move.purchase_line_id
+    , stock_move_line.product_id 
+    , date_trunc('day', stock_move_line.date + interval '7 hour') date  
+    , stock_move_line.qty_done so_luong  
+    , location_2.name diem_den 
+    , location_1.name diem_dau
+    , stock_picking.sale_id 
+    , stock_move.inventory_id
+    , stock_picking_type.name picking_type 
+    , location_1.warehouse_id as tu_kho
+	, location_2.warehouse_id as den_kho
+	, case
+	    when stock_picking_type.name= 'Điều chuyển nội bộ' and location_2.name= 'Đầu vào' then 'Điều chuyển nội bộ'
+		when stock_move.inventory_id is not null then 'Kiểm kê'
+		when stock_picking.sale_id is not null and (location_1.name= 'Kho' or location_1.name= 'Stock') then 'Xuất bán'
+		when stock_picking.sale_id is not null and (location_2.name= 'Kho' or location_2.name= 'Stock') then 'Nhập hoàn'
+		when location_2.name= 'Vendors' and (location_1.name= 'Kho' or location_1.name= 'Stock') then 'Trả hàng'
+		when location_1.name= 'Vendors' and (location_2.name= 'Kho' or location_2.name= 'Stock') then 'Nhập hàng'
+		when location_1.name= 'Kho' or location_1.name= 'Stock' then 'Sản xuất'
+		else 'Nhập khác'
+	end as phan_loai
+from 
+    stock_move_line 
+    left join stock_picking on stock_picking.id = stock_move_line.picking_id
+    left join stock_picking_type on stock_picking_type.id = stock_picking.picking_type_id
+    left join stock_move on stock_move.id = stock_move_line.move_id 
+    left join stock_location location_1 on location_1.id = stock_move_line.location_id
+    left join stock_location location_2 on location_2.id = stock_move_line.location_dest_id 
+    left join product_product on product_product.id = stock_move_line.product_id
+where 
+    stock_move_line.state= 'done'
+    and (location_1.name= 'Kho' or location_2.name= 'Kho' or location_1.name= 'Stock' or location_2.name= 'Stock')
+    and date_trunc('day', stock_move_line.date + interval '7 hour') between date_trunc('month', current_date) + interval '-5 month' and current_date
+)
+
+select 
+    date
+    , product_id 
+    , case when diem_dau= 'Kho' or diem_dau= 'Stock' then tu_kho else den_kho end warehouse_id
+    , phan_loai
+    , sum(case when diem_dau= 'Kho' or diem_dau= 'Stock' then - so_luong else so_luong end) tong_move
+    , sum(so_luong) so_luong
+from data_raw 
+group by product_id, warehouse_id, phan_loai, date
+    

@@ -1,0 +1,83 @@
+with data_raw as (
+select
+    date_trunc('day', sale_order.create_date + interval '7 hour') create_date
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime
+    , date_trunc('day', sale_order.latest_done_pick_datetime + interval '7 hour') latest_done_pick_datetime
+    , date_trunc('day', sale_order.latest_done_out_datetime + interval '7 hour') latest_done_out_datetime
+    , date_trunc('day', sale_order.latest_done_pick_return_datetime + interval '7 hour') latest_done_pick_return_datetime
+    , date_trunc('day', sale_order.ngaydonghang + interval '7 hour') ngaydonghang
+    , res_partner.country_type_id
+    , sale_order.shipping_address_type 
+    , sale_order.product_category_id 
+    , sale_order.source_id
+    , sale_order.user_id
+    , sale_order.team_id 
+    , sale_order.crm_group_id 
+    , sale_order.summary_state
+    , sale_order.warehouse_id 
+    , sale_order_line.product_id 
+    , case 
+		when res_partner.customer_type= 'wholesale' then 'Sỉ'
+		when  res_partner.customer_type= 'tmtd' then 'Thương mại điện tử'
+		else 'Lẻ'
+	end phan_loai_khach
+	, sale_order.opportunity_type
+	, sale_order.currency_id
+	, sale_order_line.price_subtotal
+    , sale_order_line.thanh_tien_noi_dia
+    , sale_order_line.product_uom_qty
+    , sale_order.id order_id 
+from 
+    sale_order_line 
+    left join sale_order on sale_order.id = sale_order_line.order_id   
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join product_product on product_product.id = sale_order_line.product_id 
+where
+    sale_order.create_date > date_trunc('month', current_date) + interval '-6 month'
+)
+		
+select 
+	create_date
+    , confirmed_datetime
+    , latest_done_pick_datetime
+    , latest_done_out_datetime
+    , latest_done_pick_return_datetime
+    , ngaydonghang
+    , country_type_id
+    , shipping_address_type 
+    , product_category_id 
+    , source_id
+    , user_id
+    , team_id 
+    , crm_group_id 
+    , summary_state
+    , warehouse_id 
+    , product_id 
+    , phan_loai_khach
+    , opportunity_type
+    , currency_id
+    , sum(thanh_tien_noi_dia) thanh_tien_noi_dia
+    , sum(price_subtotal) price_subtotal
+    , sum(product_uom_qty) product_uom_qty
+    , count(distinct order_id) n_order 
+from data_raw 
+group by 
+	create_date
+    , confirmed_datetime
+    , latest_done_pick_datetime
+    , latest_done_out_datetime
+    , latest_done_pick_return_datetime
+    , ngaydonghang
+    , country_type_id
+    , shipping_address_type 
+    , product_category_id 
+    , source_id
+    , user_id
+    , team_id 
+    , crm_group_id 
+    , summary_state
+    , warehouse_id 
+    , product_id 
+    , phan_loai_khach
+    , currency_id
+    , opportunity_type

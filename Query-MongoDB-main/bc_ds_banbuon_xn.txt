@@ -1,0 +1,71 @@
+with data_raw as ( 
+select 
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime 
+    , coalesce(sale_order.user_id, 0) user_id 
+    , coalesce(sale_order.team_id, 0) team_id 
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id 
+    , sale_order.crmf99_system_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id 
+    , coalesce( case when product_category.active='true' and product_category.category_type= 'primary' then sale_order.product_category_id else 0 end, 0) product_category_id 
+    , coalesce(utm_source.channel_id, 0) channel_id 
+    , coalesce(utm_source.crm_group_id, 0) source_crm_group_id ----- Thêm 
+    , sale_order.opportunity_type 
+    , res_partner.customer_type 
+    , sale_order.summary_state 
+    , res_partner.id partner_id
+    , case 
+    when crm_group.crm_group_type= 'tmdt' then 'Thương mại điện tử'
+    when crm_group.crm_group_type= 'ban_buon_he_thong' then 'Bán buôn tổng'
+    when (res_partner.customer_type = 'wholesale' and sale_order.opportunity_type = 'sale') then 'Bán buôn hệ thống'
+    when crm_group.crm_group_type = 'sale' then 'Sale' 
+    when crm_group.crm_group_type = 'resale' then 'Resale' 
+    else 'Khác' 
+    end phan_loai_theo_cong_ty 
+    , case when apif99_res_country_state.active= 'true' then apif99_res_country_state.name else 'Khác' end tinh_thanh
+    , case when sale_order_line.ti_gia is not null and sale_order_line.ti_gia > 1 then sale_order_line.thanh_tien_noi_dia else price_subtotal end amount 
+from 
+    sale_order_line 
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join utm_source on utm_source.id = sale_order.source_id 
+    left join product_product on product_product.id = sale_order_line.product_id 
+    left join product_template on product_template.id = product_product.product_tmpl_id
+    left join product_category on product_category.id = product_template.categ_id 
+    left join crm_group on crm_group.id = sale_order.crm_group_id
+    left join apif99_res_country_state on apif99_res_country_state.id = sale_order.state_id
+where 
+    sale_order.summary_state not in('rfq','cancel') 
+    and 
+    (
+        crm_group.crm_group_type= 'ban_buon_he_thong'
+        or (res_partner.customer_type = 'wholesale' and  sale_order.opportunity_type = 'sale' and crm_group.crm_group_type!= 'tmdt')
+    )
+    ---[@data_raw] 
+----limit 100
+) 
+select 
+    confirmed_datetime 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id 
+    , channel_id 
+    , partner_id
+    , tinh_thanh
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty= 'Bán buôn tổng'), 0) ds_bb_tong
+    , coalesce(sum(amount) filter(where phan_loai_theo_cong_ty= 'Bán buôn hệ thống'), 0) ds_bb_ht
+from data_raw 
+group by 
+    confirmed_datetime 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id 
+    , channel_id 
+    , partner_id
+    , tinh_thanh

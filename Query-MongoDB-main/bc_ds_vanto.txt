@@ -1,0 +1,53 @@
+with tab as (
+select 
+    sale_order.id order_id 
+    , date_trunc('month', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime 
+    , sale_order.user_id 
+    , sale_order.team_id 
+    , sale_order.crm_group_id
+    , res_partner.country_type_id
+    , sale_order.summary_state 
+    , sale_order.product_category_id 
+    , case     
+        when sale_order_line.product_id IN (3602,3604,3603) and sale_order.crmf99_system_id= 67 then 'XNK ASIA'
+        when crm_group.crm_group_type= 'tmdt' and product_template.crm_group_id= 339 then 'TMĐT Nhập khẩu'
+        when crm_group.crm_group_type= 'tmdt' then 'TMĐT'
+        when crm_group.crmf99_system_id= 60 and product_template.crm_group_id= 339 then 'BB Nhập khẩu'
+        when crm_group.crmf99_system_id= 60 then 'BB 5G'
+        when (res_partner.customer_type = 'wholesale' and sale_order.opportunity_type = 'sale') then 'BB Hệ thống'
+        when crm_group.crm_group_type = 'sale' then 'Sale' 
+        when crm_group.crm_group_type = 'resale' then 'Resale' 
+        else 'Khác' 
+    end phan_loai_theo_cong_ty
+    , case when sale_order_line.ti_gia is not null and sale_order_line.ti_gia > 1 then sale_order_line.thanh_tien_noi_dia else price_subtotal end amount 
+
+from 
+    sale_order_line 
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join product_product on product_product.id = sale_order_line.product_id 
+    left join product_template on product_template.id = product_product.product_tmpl_id
+    left join crm_group on crm_group.id = sale_order.crm_group_id 
+    left join res_partner on res_partner.id = sale_order.partner_id 
+where 
+    sale_order.summary_state not in('rfq','cancel')
+    and date_part('year', sale_order.confirmed_datetime + interval '7 hour')> 2023
+) 
+select 
+    confirmed_datetime
+    , user_id
+    , team_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , phan_loai_theo_cong_ty
+    , sum(amount) doanh_so 
+    , count(distinct order_id) so_don 
+from tab 
+group by 
+    confirmed_datetime
+    , user_id
+    , team_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , phan_loai_theo_cong_ty

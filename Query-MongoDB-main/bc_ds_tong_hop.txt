@@ -1,0 +1,61 @@
+with data_raw as ( 
+select 
+    sale_order.id order_id 
+    , case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount 
+    , sale_order.opportunity_type 
+    , sale_order.summary_state 
+    , sale_order.user_id 
+    , sale_order.contact_creator_id mkt_user_id 
+    , utm_source.user_id nguon_user_id 
+    , sale_order.van_don_nhan_don_id
+    , date_trunc('day', sale_order.create_date + interval '7 hour') create_date 
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime 
+    , date_trunc('day', sale_order.latest_done_pick_datetime + interval '7 hour') latest_done_pick_datetime 
+    , date_trunc('day', sale_order.latest_done_out_datetime + interval '7 hour') latest_done_out_datetime 
+from 
+    sale_order 
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join utm_source on utm_source.id = sale_order.source_id 
+    left join product_category on product_category.id = sale_order.product_category_id 
+    left join crm_group on crm_group.id = sale_order.crm_group_id 
+    left join crm_lead on sale_order.opportunity_id = crm_lead.id
+)
+select
+    create_date
+    , confirmed_datetime
+    , latest_done_pick_datetime
+    , latest_done_out_datetime
+    , opportunity_type
+    , user_id
+    , mkt_user_id
+    , nguon_user_id
+    , van_don_nhan_don_id
+    , count(distinct order_id) tong_don  
+    , sum(amount) tong_ds
+    , count(distinct order_id) filter(where summary_state= 'cancel') don_huy 
+    , sum(amount) filter(where summary_state= 'cancel') ds_huy 
+    , count(distinct order_id) filter(where summary_state= 'rfq') don_bao_gia 
+    , sum(amount) filter(where summary_state= 'rfq') ds_bao_gia 
+    , count(distinct order_id) filter(where summary_state not in ('cancel')) don_chot 
+    , sum(amount) filter(where summary_state not in ('cancel')) ds_chot
+    , count(distinct order_id) filter(where summary_state not in ('rfq', 'cancel')) don_xn 
+    , sum(amount) filter(where summary_state not in ('rfq', 'cancel')) ds_xn 
+    , count(distinct order_id) filter(where summary_state not in ('rfq', 'cancel', 'confirmed')) don_chuyen 
+    , sum(amount) filter(where summary_state not in ('rfq', 'cancel', 'confirmed')) ds_chuyen
+    , count(distinct order_id) filter(where summary_state= 'completed') don_thanh_cong 
+    , sum(amount) filter(where summary_state= 'completed') ds_thanh_cong 
+    , count(distinct order_id) filter(where summary_state= 'returned') don_hoan 
+    , sum(amount) filter(where summary_state= 'returned') ds_hoan 
+from 
+    data_raw 
+group by 
+    create_date
+    , confirmed_datetime
+    , latest_done_pick_datetime
+    , latest_done_out_datetime
+    , opportunity_type
+    , user_id
+    , mkt_user_id
+    , nguon_user_id
+    , van_don_nhan_don_id
+    

@@ -1,0 +1,50 @@
+with tab as (
+select
+                    crm_lead.id lead_id 
+                    , crm_lead.first_user_id
+                    , coalesce(crm_lead.user_id, 0) user_id
+                    , coalesce(crm_group.id, 0) crm_group_id 
+                    , coalesce(product_category.id, 0) product_category_id
+                    , coalesce(country_type.id, 0) country_type_id 
+                    , date_trunc('day', crm_lead.first_date_open + interval '7 hour') first_date_open
+                    , date_trunc('day', crm_lead.date_open + interval '7 hour') date_open
+                    , crm_lead_note2.lead_note 
+                from 
+                    crm_lead 
+                    left join crm_group on crm_group.id = crm_lead.crm_group_id 
+                    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id 
+                    left join product_category on product_category.id = crm_lead.product_category_id
+                    left join res_partner on res_partner.id = crm_lead.partner_id
+                    left join country_type on country_type.id = res_partner.country_type_id 
+                    left join (select crm_lead_id, count(id) lead_note from crm_lead_note2 group by crm_lead_id) crm_lead_note2 on crm_lead_note2.crm_lead_id = crm_lead.id 
+                where 
+                    crm_lead.active= 'true'
+                    and crm_lead.opportunity_type= 'sale') 
+                    
+select 
+    tab_date.date_open
+    , tab_date.user_id
+    , tab_date.crm_group_id
+    , tab_date.product_category_id
+    , tab_date.country_type_id
+    , coalesce(so_moi, 0) so_moi 
+    , coalesce(da_goi, 0) da_goi
+    , coalesce(so_cu, 0) so_cu
+from 
+    (select distinct first_date_open date_open, user_id, crm_group_id, product_category_id, country_type_id from tab 
+    union 
+    select distinct date_open, user_id, crm_group_id, product_category_id, country_type_id from tab) tab_date  
+    left join (
+                select first_date_open date_open, user_id, crm_group_id, product_category_id, country_type_id
+                    , count(distinct lead_id) so_moi
+                    , count(distinct case when lead_note is not null then lead_id end) da_goi
+                from tab
+                group by first_date_open, user_id, crm_group_id, product_category_id, country_type_id ) so_moi on so_moi.date_open = tab_date.date_open and so_moi.user_id = tab_date.user_id and so_moi.crm_group_id = tab_date.crm_group_id 
+                                    and so_moi.product_category_id = tab_date.product_category_id and so_moi.country_type_id = tab_date.country_type_id
+    left join (
+                select date_open, user_id, crm_group_id, product_category_id, country_type_id
+                    , count(distinct lead_id) so_cu
+                from tab
+                where user_id != first_user_id
+                group by date_open, user_id, crm_group_id, product_category_id, country_type_id) so_cu on so_cu.date_open = tab_date.date_open and so_cu.user_id = tab_date.user_id and so_cu.crm_group_id = tab_date.crm_group_id 
+                                            and so_cu.product_category_id = tab_date.product_category_id and so_cu.country_type_id = tab_date.country_type_id

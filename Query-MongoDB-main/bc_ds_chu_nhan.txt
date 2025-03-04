@@ -1,0 +1,83 @@
+with 
+data_raw as (
+select
+    sale_order.id order_id 
+    , coalesce(sale_order.chietkhautongdon, 0) chietkhautongdon
+    , sale_order_line.price_subtotal 
+    , sale_order_line.price_unit
+    , sale_order.currency_rate 
+    , sale_order.currency_id 
+    , sale_order.opportunity_type
+    , res_partner.customer_type
+    , sale_order.summary_state
+    , case 
+        when crm_group.crm_group_type= 'tmdt' then 'tmdt'
+        when crm_group.crm_group_type= 'ban_buon_he_thong' then 'bb_tong'
+        when (res_partner.customer_type = 'wholesale' and  sale_order.opportunity_type = 'sale')  then 'bb_he_thong' 
+        when crm_group.crm_group_type = 'sale' then 'Sale'
+        when crm_group.crm_group_type = 'resale' then 'Resale'
+        else 'Khác'
+    end crm_group_type 
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime
+    , coalesce(product_category.crm_group_id, 0) chu_nhan_id 
+    , coalesce(sale_order.user_id, 0) user_id
+    , coalesce(sale_order.team_id, 0) team_id
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id
+    , coalesce(sale_order.crmf99_system_id, 0) crmf99_system_id
+    , coalesce(product_category.id, 0) product_category_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id
+    , coalesce(res_partner.id, 0) partner_id
+    , coalesce(utm_source.channel_id, 0) channel_id
+from sale_order_line 
+    left join sale_order on sale_order.id = sale_order_line.order_id
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join product_product on sale_order_line.product_id = product_product.id 
+    left join product_template on product_template.id = product_product.product_tmpl_id
+    left join product_category on product_category.id = product_template.categ_id
+    left join utm_source on utm_source.id = sale_order.source_id 
+    left join crm_group on crm_group.id = sale_order.crm_group_id 
+where 
+    sale_order.summary_state not in ('rfq','cancel') 
+), 
+tab as (
+select 
+    data_raw.*
+    , case 
+        when chietkhautongdon= 0 then 0 
+        when price_subtotal>0 then chietkhautongdon*price_subtotal/(select sum(price_subtotal) from data_raw tam where tam.order_id = data_raw.order_id and price_subtotal>0 )
+        else 0 end chiet_khau_line 
+from 
+    data_raw
+) 
+select
+    chu_nhan_id
+    , user_id
+    , team_id
+    , crm_group_id
+    , crmf99_system_id
+    , product_category_id
+    , country_type_id
+    , channel_id
+    , confirmed_datetime
+    , count(distinct order_id) tong_don 
+    , sum(case when currency_id= 23 then price_subtotal - chiet_khau_line else (price_subtotal - chiet_khau_line)/currency_rate end ) tong_ds
+    , sum(case when crm_group_type!= 'Sale' then 0 when currency_id= 23 then price_subtotal - chiet_khau_line else (price_subtotal - chiet_khau_line)/currency_rate end ) ds_sale 
+    , sum(case when crm_group_type!= 'Resale' then 0 when currency_id= 23 then price_subtotal - chiet_khau_line else (price_subtotal - chiet_khau_line)/currency_rate end ) ds_resale
+    , sum(case when crm_group_type!= 'tmdt' then 0 when currency_id= 23 then price_subtotal - chiet_khau_line else (price_subtotal - chiet_khau_line)/currency_rate end ) ds_tmdt 
+    , sum(case when crm_group_type!= 'bb_tong' then 0 when currency_id= 23 then price_subtotal - chiet_khau_line else (price_subtotal - chiet_khau_line)/currency_rate end ) ds_bb_tong
+    , sum(case when crm_group_type!= 'bb_he_thong' then 0 when currency_id= 23 then price_subtotal - chiet_khau_line else (price_subtotal - chiet_khau_line)/currency_rate end ) ds_bb_he_thong
+    , sum(case when crm_group_type not in ('bb_tong', 'bb_he_thong') then 0 when currency_id= 23 then price_subtotal - chiet_khau_line else (price_subtotal - chiet_khau_line)/currency_rate end) ds_bb 
+    , count(distinct case when crm_group_type not in ('bb_tong', 'bb_he_thong') then 0 else order_id end) don_bb
+    , count(distinct case when crm_group_type!= 'bb_he_thong' then 0 else order_id end ) don_bb_he_thong
+    , count(distinct case when crm_group_type not in ('bb_tong', 'bb_he_thong') then 0 else order_id end) don_bb 
+from tab 
+group by 
+    chu_nhan_id
+    , user_id
+    , team_id
+    , crm_group_id
+    , crmf99_system_id
+    , product_category_id
+    , country_type_id
+    , channel_id
+    , confirmed_datetime

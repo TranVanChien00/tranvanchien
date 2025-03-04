@@ -1,0 +1,334 @@
+with 
+calendar as (
+select 
+        date_trunc('month', generate_series) thang
+        , count(generate_series) filter( where extract(isodow from generate_series)= 6) thu_7 
+        , count(generate_series) filter( where extract(isodow from generate_series)= 7) cn 
+        , date_part('day', date_trunc('month', generate_series) + interval ' 1 month -1 second') tong_ngay 
+        , row_number() over(order by date_trunc('month', generate_series) asc ) stt 
+from generate_series(
+                    coalesce([[concat({{thang}}, '/01')::date + interval '-1 month',]] date_trunc('month', current_date) + interval '-1 month') 
+                    , coalesce([[concat({{thang}}, '/01')::date + interval '1 month - 1 second',]] date_trunc('month', current_date) + interval '1 month - 1 second' )
+                    , '1 day'::interval
+    )
+group by date_trunc('month', generate_series), tong_ngay 
+), 
+cong_dinh_muc as (
+select 
+    * 
+    , tong_ngay - cn - thu_7 + 2 id_13 
+    , tong_ngay - cn - thu_7 id_10 
+    , tong_ngay - cn id_khac 
+from calendar 
+),
+data_employee as (
+select hr_employee.*, hr_job.job_position
+    , case 
+        when hr_employee.team_id= 2410 then 97 
+        when hr_employee.team_id= 2381 then 2 
+        when hr_employee.team_id= 2419 then 4 
+        when hr_employee.team_id= 2390 then 96 
+        when hr_employee.team_id= 2472 then 3 
+    end warehouse_id 
+from 
+    hr_employee
+    left join hr_job on hr_job.id = hr_employee.job_id 
+where 
+    hr_employee.active= 'true'
+    and (
+        hr_employee.activity!= 'terminated' 
+        or 
+        (hr_employee.activity= 'terminated' and hr_employee.terminate_date is not null)
+    )
+), 
+data_cong as (
+select 
+    date_trunc('month', check_in_date) thang
+    , sum(worked_days_rate) cong_thuc_te
+    , case when data_employee.resource_calendar_id= 13 then id_13 when data_employee.resource_calendar_id= 10 then id_10 else id_khac end cong_dinh_muc
+    , data_employee.id employee_id
+    , data_employee.job_id
+    , data_employee.job_position
+    , data_employee.warehouse_id
+from hr_attendance
+inner join data_employee on data_employee.id = hr_attendance.employee_id 
+left join cong_dinh_muc on cong_dinh_muc.thang = date_trunc('month', check_in_date)
+where
+        [[ date_trunc('month', check_in_date) between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' and ]] 
+    (
+        date_trunc('month', check_in_date) between date_trunc('month', current_date) + interval '-1 month' and date_trunc('month', current_date) + interval '1 month - 1 second'
+        [[ or date_trunc('month', check_in_date) between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' ]]
+    ) 
+group by date_trunc('month', check_in_date), data_employee.id, cong_dinh_muc, data_employee.job_id, data_employee.job_position, data_employee.warehouse_id
+), 
+tab_cong_ns as (
+select 
+    thang
+    , sum(case when cong_thuc_te>cong_dinh_muc then 1 else cong_thuc_te/cong_dinh_muc::float end) filter(where job_position= 'marketing') cong_mkt 
+    , sum(case when cong_thuc_te>cong_dinh_muc then 1 else cong_thuc_te/cong_dinh_muc::float end) filter(where job_position= 'sale') cong_sale
+from data_cong 
+where 
+    job_position in ( 'sale', 'marketing')
+group by thang 
+), 
+tab_cong_kho as (
+select 
+    thang
+    , warehouse_id
+    , sum(case when cong_thuc_te>cong_dinh_muc then 1 else cong_thuc_te/cong_dinh_muc::float end) cong_kho
+from data_cong 
+where 
+    job_id in (25, 271, 324, 203, 172, 257)
+group by thang, warehouse_id
+),
+data_order as (
+select
+    sale_order.id order_id 
+    , {{snippet: doanh_so_new}}
+    , sale_order.partner_id 
+    , date_trunc('month', sale_order.latest_done_pick_datetime + interval '7 hour') thang  
+    , res_partner.customer_type
+    , sale_order.opportunity_type
+    , case 
+        when sale_order.warehouse_id= 113 then 97
+        when sale_order.warehouse_id= 114 then 96
+        when sale_order.warehouse_id= 115 then 112
+        else sale_order.warehouse_id
+    end warehouse_id
+    , case 
+        when sale_order.warehouse_id in (113, 97) then 'a'
+        when sale_order.warehouse_id in (114, 96) then 'b'
+        when sale_order.warehouse_id in (115, 112) then 'f'
+        when sale_order.warehouse_id= 2 then 'd'
+        when sale_order.warehouse_id= 3 then 'e'
+        when sale_order.warehouse_id= 4 then 'c'
+        else 'g'
+    end warehouse_set
+    , sale_order.crm_group_id
+    , sale_order.contact_creator_crm_group_id
+from 
+    sale_order 
+    left join res_partner on res_partner.id = sale_order.partner_id
+where 
+        [[ date_trunc('month', sale_order.latest_done_pick_datetime + interval '7 hour') between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' and ]] 
+    (
+        date_trunc('month', sale_order.latest_done_pick_datetime + interval '7 hour') between date_trunc('month', current_date) + interval '-1 month' and date_trunc('month', current_date) + interval '1 month - 1 second'
+        [[ or date_trunc('month', sale_order.latest_done_pick_datetime + interval '7 hour') between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' ]]
+    ) 
+), 
+tab_ds_mkt as (
+select
+    thang 
+    , sum(amount) doanh_so 
+    , sum(amount) filter(where (customer_type is null or customer_type != 'wholesale')and opportunity_type in ('sale')) ds_sale_le
+    , count(distinct order_id) filter(where (customer_type is null or customer_type != 'wholesale')and opportunity_type in ('sale')) don_sale_le
+from 
+    data_order
+    left join crm_group on crm_group.id = data_order.contact_creator_crm_group_id
+    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id
+where 
+    1=1 
+    and {{cong_ty}}
+    and {{he_thong}}
+group by thang 
+), 
+tab_ds_sale as (
+select
+    thang 
+    , sum(amount) doanh_so 
+    , count(distinct order_id) so_don 
+from 
+    data_order
+    left join crm_group on crm_group.id = data_order.crm_group_id 
+    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id 
+where 
+    1=1 
+    and {{cong_ty}}
+    and {{he_thong}}
+group by thang 
+),
+tab_ds_kho as (
+select
+    thang 
+    , warehouse_id
+    , warehouse_set
+    , sum(amount) doanh_so 
+    , count(distinct order_id) so_don 
+from 
+    data_order
+group by thang, warehouse_id, warehouse_set
+), 
+chi_phi as (
+select  
+    date_trunc('month', HE.date) thang 
+    , sum(HE.daily_amount) chi_phi
+    
+from hr_daily_expense as HE 
+    left join crm_group on crm_group.id = HE.crm_group_id 
+    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id
+where   
+        [[ HE.date between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' and ]] 
+    (
+        HE.date between date_trunc('month', current_date) + interval '-1 month' and date_trunc('month', current_date) + interval '1 month - 1 second'
+        [[ or HE.date between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' ]]
+    ) 
+    and HE.state in ('confirmed','to_confirm')
+    and {{cong_ty}}
+    and {{he_thong}}
+group by thang 
+), 
+data_phone as (
+select 
+    date_trunc('month', res_partner.create_date + interval '7 hour') thang 
+    , count(distinct res_partner.id ) sdt 
+from 
+    res_partner 
+    left join utm_source on utm_source.id = res_partner.source_id 
+    left join crm_group on crm_group.id = res_partner.crm_group_id 
+    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id
+where 
+        [[ res_partner.create_date between concat({{thang}}, '/01')::date + interval '-1 month - 7 hour' and concat({{thang}}, '/01')::date + interval '1 month - 7 hour - 1 second' and ]] 
+    (
+        res_partner.create_date between date_trunc('month', current_date) + interval '-1 month - 7 hour' and date_trunc('month', current_date) + interval '1 month - 7 hour - 1 second'
+        [[ or res_partner.create_date between concat({{thang}}, '/01')::date + interval '-1 month - 7 hour' and concat({{thang}}, '/01')::date + interval '1 month - 7 hour - 1 second' ]]
+    )
+    and (res_partner.was_closed is null or res_partner.was_closed is false )
+    and utm_source.channel_id!= 24 ------ Loại nguồn Shopee 
+    and {{cong_ty}}
+    and {{he_thong}}
+group by 
+    thang 
+), 
+tab_nhan_su as (
+select 
+    calendar.thang 
+    , count(distinct id) tong_nv 
+    , count(distinct id) filter(where date_trunc('month', terminate_date) = calendar.thang) ns_nghi_viec
+    , count(distinct id) filter(where date_trunc('month', start_work_date) = calendar.thang) ns_moi
+from 
+    calendar
+    left join data_employee on data_employee.start_work_date<= calendar.thang + interval '1 month - 1 second' and (data_employee.terminate_date is null or data_employee.terminate_date >= calendar.thang)
+group by calendar.thang 
+) , 
+tab as (
+select
+    calendar.stt 
+    , tab_ds_sale.doanh_so/cong_sale ds_nv_sale
+    , tab_ds_mkt.ds_sale_le/cong_mkt ds_nv_mkt
+    , don_sale_le/sdt::float ty_le_chot_don 
+    , ns_nghi_viec/tong_nv::float ty_le_nghi_viec 
+    , ns_moi/tong_nv::float ty_le_tuyen_moi 
+    , chi_phi/tab_ds_mkt.doanh_so::float cp_ds 
+    , chi_phi/cong_mkt cp_tren_nhan_vien 
+    , chi_phi/sdt gia_so 
+    , ds_sale_le/sdt ds_tren_sdt 
+from 
+    calendar
+    left join chi_phi on chi_phi.thang = calendar.thang 
+    left join data_phone on data_phone.thang = calendar.thang 
+    left join tab_ds_sale on tab_ds_sale.thang = calendar.thang 
+    left join tab_ds_mkt on tab_ds_mkt.thang = calendar.thang 
+    left join tab_cong_ns on tab_cong_ns.thang = calendar.thang 
+    left join tab_nhan_su on tab_nhan_su.thang = calendar.thang 
+), 
+tab_kho as (
+select 
+    calendar.stt  
+    , concat('09.', warehouse_set, '.') stt_name 
+    , stock_warehouse.name warehouse_name
+    , sum(so_don)/sum(cong_kho) don_tren_nv
+from 
+    tab_cong_kho
+    inner join tab_ds_kho on tab_cong_kho.thang = tab_ds_kho.thang and tab_cong_kho.warehouse_id = tab_ds_kho.warehouse_id
+    left join stock_warehouse on stock_warehouse.id = tab_cong_kho.warehouse_id
+    left join calendar on calendar.thang = tab_cong_kho.thang 
+group by 
+    calendar.stt  
+    , stock_warehouse.name
+    , warehouse_set
+) 
+select distinct
+    '01.' stt 
+    , 'Doanh số trên nhân viên' chi_tieu
+    , '' t_1
+    , '' t 
+from tab 
+union 
+select 
+    '01.a.'
+    , 'Nhân viên MKT' 
+    , to_char(sum(ds_nv_mkt) filter(where stt= 1), '9,999,999,999')
+    , to_char(sum(ds_nv_mkt) filter(where stt= 2), '9,999,999,999')
+from tab 
+union 
+select 
+    '01.b.'
+    , 'Nhân viên Sale'
+    , to_char(sum(ds_nv_sale) filter(where stt= 1), '9,999,999,999')
+    , to_char(sum(ds_nv_sale) filter(where stt= 2), '9,999,999,999')
+from tab 
+union 
+select 
+    '02.'
+    , 'Tỷ lệ chốt đơn'
+    , concat(to_char(sum(ty_le_chot_don) filter(where stt= 1)*100, '999.9'), '%')
+    , concat(to_char(sum(ty_le_chot_don) filter(where stt= 2)*100, '999.9'), '%')
+from tab 
+union 
+select 
+    '03.'
+    , 'Tỷ lệ nghỉ việc'
+    , concat(to_char(sum(ty_le_nghi_viec) filter(where stt= 1)*100, '999.9'), '%')
+    , concat(to_char(sum(ty_le_nghi_viec) filter(where stt= 2)*100, '999.9'), '%')
+from tab 
+union 
+select 
+    '04.'
+    , 'Tỷ lệ tuyển dụng'
+    , concat(to_char(sum(ty_le_tuyen_moi) filter(where stt= 1)*100, '999.9'), '%')
+    , concat(to_char(sum(ty_le_tuyen_moi) filter(where stt= 2)*100, '999.9'), '%')
+from tab 
+union 
+select 
+    '05.'
+    , 'Chi phí MKT trên Doanh số'
+    , concat(to_char(sum(cp_ds) filter(where stt= 1)*100, '999.9'), '%')
+    , concat(to_char(sum(cp_ds) filter(where stt= 2)*100, '999.9'), '%')
+from tab 
+union 
+select 
+    '06.'
+    , 'Chi phí MKT trên nhân viên MKT'
+    , to_char(sum(cp_tren_nhan_vien) filter(where stt= 1), '9,999,999,999')
+    , to_char(sum(cp_tren_nhan_vien) filter(where stt= 2), '9,999,999,999')
+from tab 
+union 
+select 
+    '07.'
+    , 'Giá số'
+    , to_char(sum(gia_so) filter(where stt= 1), '9,999,999,999')
+    , to_char(sum(gia_so) filter(where stt= 2), '9,999,999,999')
+from tab 
+union 
+select 
+    '08.'
+    , 'Doanh số trên SĐT'
+    , to_char(sum(ds_tren_sdt) filter(where stt= 1), '9,999,999,999')
+    , to_char(sum(ds_tren_sdt) filter(where stt= 2), '9,999,999,999')
+from tab 
+union 
+select distinct
+    '09.'
+    , 'Số đơn trên nhân viên'
+    , ''
+    , ''
+from tab_kho 
+union 
+select 
+    stt_name 
+    , warehouse_name
+    , to_char(sum(don_tren_nv) filter(where stt= 1), '9,999,999,999')
+    , to_char(sum(don_tren_nv) filter(where stt= 2), '9,999,999,999')
+from tab_kho 
+group by stt_name, warehouse_name
+order by stt 

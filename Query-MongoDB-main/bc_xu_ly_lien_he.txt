@@ -1,0 +1,186 @@
+ with data_note as (
+select
+                       crm_lead_note2.crm_lead_id
+                       , max(crm_lead_note2.create_date) ngay_goi
+                from 
+                        crm_lead_note2
+                        left join crm_lead on crm_lead.id = crm_lead_note2.crm_lead_id
+                        left join res_partner on crm_lead.id = res_partner.crm_lead_id 
+                where 
+                        crm_lead_state!= 'failed'
+                        and was_closed!= 'true'
+                        and crm_lead_note2.create_date is not null 
+                        [@data_note]
+                group by crm_lead_note2.crm_lead_id
+                        ),
+
+
+        data_raw as 
+                (select 
+                        res_partner.id lien_he
+                        , crmf99_system.id crmf99_system_id
+                        , crm_group.id crm_group_id
+                        , res_users.id crm_lead_user_id
+                        , res_partner.crm_lead_team_id team_id
+                        , res_partner.product_category_id
+                        , res_partner.country_type_id
+                        , crm_lead.state
+                        , utm_source.channel_id
+                        , res_partner.created_datetime + interval '7 hour' created_datetime
+                        , crm_lead.first_date_open + interval '7 hour' ngay_nhan_so
+                        , case when res_users.name is null then null else (data_note.ngay_goi + interval '7 hour') end ngay_goi
+                        , case 
+                    		when res_partner.customer_type= 'wholesale' then 'Sỉ'
+                    		when  res_partner.customer_type= 'tmtd' then 'Thương mại điện tử'
+                    		else 'Lẻ'
+                    	end phan_loai_khach
+                from 
+                        res_partner
+                        left join crm_lead on crm_lead.id = res_partner.crm_lead_id 
+                        left join crm_group on crm_group.id = res_partner.crm_lead_crm_group_id
+                        left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id 
+                        left join res_users on res_users.id = res_partner.crm_lead_user_id
+                        left join country_type on country_type.id = res_partner.country_type_id
+                        left join crm_team on res_users.sale_team_id = crm_team.id
+                        left join utm_source on utm_source.id = res_partner.source_id
+                        left join data_note on data_note.crm_lead_id = crm_lead.id
+                where 
+                        crm_lead_state!= 'failed'
+                        and was_closed is not true
+                        and res_partner.crm_lead_crm_group_id is not null 
+                        and res_partner.crm_lead_user_id is not null 
+                        [@data_raw]
+                        ),
+        clean_data as
+                (select 
+                        * 
+                        , case 
+                                when ngay_nhan_so is null then 0 
+                                when created_datetime>ngay_nhan_so then 0 
+                                else date_part('day', ngay_nhan_so-created_datetime)*24*60 + date_part('hour', ngay_nhan_so-created_datetime)*60 + date_part('minute', ngay_nhan_so-created_datetime) 
+                        end len_so_ngay_nhan 
+                        , case 
+                                when ngay_goi is null then 0 
+                                when created_datetime>ngay_goi then 0 
+                                else date_part('day', ngay_goi-created_datetime)*24*60 + date_part('hour', ngay_goi-created_datetime)*60 + date_part('minute', ngay_goi-created_datetime) 
+                        end len_so_goi 
+                        , case 
+                                when ngay_goi is null then 0 
+                                when ngay_nhan_so>ngay_goi then 0 
+                                else date_part('day', ngay_goi-ngay_nhan_so)*24*60 + date_part('hour', ngay_goi-ngay_nhan_so)*60 + date_part('minute', ngay_goi-ngay_nhan_so) 
+                        end nhan_so_goi
+                        
+                        , ngay_nhan_so::date-created_datetime::date kc_len_so_ngay_nhan 
+                        , ngay_goi::date - created_datetime::date kc_len_so_goi 
+                        , ngay_goi::date - ngay_nhan_so::date kc_nhan_so_goi
+                        
+                        , date_part('hour', ngay_nhan_so)*60 + date_part('minute', ngay_nhan_so) phut_nhan_so
+                        , date_part('hour', created_datetime)*60 + date_part('minute', created_datetime) phut_len_so
+                        , date_part('hour', ngay_goi)*60 + date_part('minute', ngay_goi) phut_goi
+                from data_raw), 
+                
+        total as         
+                (select
+                        *
+                        , case  
+                                        when len_so_ngay_nhan= 0 then 0 
+                                        when kc_len_so_ngay_nhan= 0 then 
+                                            (case 
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_nhan_so>510 and phut_nhan_so<1290 then len_so_ngay_nhan
+                                                when phut_len_so<510 and phut_nhan_so>510 and phut_nhan_so<1290 then phut_nhan_so - 510
+                                                when phut_len_so<510 and phut_nhan_so>1290 then 780
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_nhan_so>1290 then 1290 - phut_len_so
+                                                else 0
+                                            end)
+                                        else 
+                                            (case 
+                                                when phut_len_so<510 and phut_nhan_so<510 then kc_len_so_ngay_nhan*780 
+                                                when phut_len_so<510 and phut_nhan_so>510 and phut_nhan_so<1290 then kc_len_so_ngay_nhan*780 + (phut_nhan_so - 510)
+                                                when phut_len_so<510 and phut_nhan_so>1290 then (kc_len_so_ngay_nhan+1)*780
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_nhan_so<510 then (kc_len_so_ngay_nhan-1)*780 + (1290 - phut_len_so)
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_nhan_so>510 and phut_nhan_so<1290 then (kc_len_so_ngay_nhan-1)*780 + (1290 - phut_len_so) + (phut_nhan_so - 510)
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_nhan_so>1290 then kc_len_so_ngay_nhan*780 + (1290 - phut_len_so)
+                                                when phut_len_so>1290 and phut_nhan_so<510 then (kc_len_so_ngay_nhan-1)*780
+                                                when phut_len_so>1290 and phut_nhan_so>510 and phut_nhan_so<1290 then (kc_len_so_ngay_nhan-1)*780 + (phut_nhan_so - 510)
+                                                when phut_len_so>1290 and phut_nhan_so>1290 then kc_len_so_ngay_nhan*780
+                                            end) 
+                        end hc_len_so_ngay_nhan
+                        , case  
+                                        when len_so_goi= 0 then 0 
+                                        when kc_len_so_goi= 0 then 
+                                            (case 
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_goi>510 and phut_goi<1290 then len_so_goi
+                                                when phut_len_so<510 and phut_goi>510 and phut_goi<1290 then phut_goi - 510
+                                                when phut_len_so<510 and phut_goi>1290 then 780
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_goi>1290 then 1290 - phut_len_so
+                                                else 0
+                                            end)
+                                        else 
+                                            (case 
+                                                when phut_len_so<510 and phut_goi<510 then kc_len_so_goi*780 
+                                                when phut_len_so<510 and phut_goi>510 and phut_goi<1290 then kc_len_so_goi*780 + (phut_goi - 510)
+                                                when phut_len_so<510 and phut_goi>1290 then (kc_len_so_goi+1)*780
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_goi<510 then (kc_len_so_goi-1)*780 + (1290 - phut_len_so)
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_goi>510 and phut_goi<1290 then (kc_len_so_goi-1)*780 + (1290 - phut_len_so) + (phut_goi - 510)
+                                                when phut_len_so>510 and phut_len_so<1290 and phut_goi>1290 then kc_len_so_goi*780 + (1290 - phut_len_so)
+                                                when phut_len_so>1290 and phut_goi<510 then (kc_len_so_goi-1)*780
+                                                when phut_len_so>1290 and phut_goi>510 and phut_goi<1290 then (kc_len_so_goi-1)*780 + (phut_goi - 510)
+                                                when phut_len_so>1290 and phut_goi>1290 then kc_len_so_goi*780
+                                            end) 
+                        end hc_len_so_goi
+                        , case  
+                                        when nhan_so_goi= 0 then 0 
+                                        when kc_nhan_so_goi= 0 then 
+                                            (case 
+                                                when phut_nhan_so>510 and phut_nhan_so<1290 and phut_goi>510 and phut_goi<1290 then nhan_so_goi
+                                                when phut_nhan_so<510 and phut_goi>510 and phut_goi<1290 then phut_goi - 510
+                                                when phut_nhan_so<510 and phut_goi>1290 then 780
+                                                when phut_nhan_so>510 and phut_nhan_so<1290 and phut_goi>1290 then 1290 - phut_nhan_so
+                                                else 0
+                                            end)
+                                        else 
+                                            (case 
+                                                when phut_nhan_so<510 and phut_goi<510 then kc_nhan_so_goi*780 
+                                                when phut_nhan_so<510 and phut_goi>510 and phut_goi<1290 then kc_nhan_so_goi*780 + (phut_goi - 510)
+                                                when phut_nhan_so<510 and phut_goi>1290 then (kc_nhan_so_goi+1)*780
+                                                when phut_nhan_so>510 and phut_nhan_so<1290 and phut_goi<510 then (kc_nhan_so_goi-1)*780 + (1290 - phut_nhan_so)
+                                                when phut_nhan_so>510 and phut_nhan_so<1290 and phut_goi>510 and phut_goi<1290 then (kc_nhan_so_goi-1)*780 + (1290 - phut_nhan_so) + (phut_goi - 510)
+                                                when phut_nhan_so>510 and phut_nhan_so<1290 and phut_goi>1290 then kc_nhan_so_goi*780 + (1290 - phut_nhan_so)
+                                                when phut_nhan_so>1290 and phut_goi<510 then (kc_nhan_so_goi-1)*780
+                                                when phut_nhan_so>1290 and phut_goi>510 and phut_goi<1290 then (kc_nhan_so_goi-1)*780 + (phut_goi - 510)
+                                                when phut_nhan_so>1290 and phut_goi>1290 then kc_nhan_so_goi*780
+                                            end) 
+                        end hc_nhan_so_goi
+                from clean_data),
+        tab as         
+                (select 
+                        crmf99_system_id
+                        , crm_group_id
+                        , crm_lead_user_id
+                        , team_id
+                        , product_category_id
+                        , country_type_id
+                        , channel_id
+                        ,  date_trunc('day',created_datetime) created_datetime
+                        , date_trunc('day',ngay_nhan_so) ngay_nhan_so
+                        , case when res_users.name is null then null else (data_note.ngay_goi + interval '7 hour') end ngay_goi
+                        , case 
+                    		when res_partner.customer_type= 'wholesale' then 'Sỉ'
+                    		when  res_partner.customer_type= 'tmtd' then 'Thương mại điện tử'
+                    		else 'Lẻ'
+                    	end phan_loai_khach
+                        , count(distinct lien_he) tong_data
+                        , count(distinct case when crm_lead_user_id is not null then lien_he end) data_da_chia
+                        , count(distinct case when crm_lead_user_id is null then lien_he end) data_chua_chia
+                        , count(distinct case when crm_lead_user_id is not null and state!= 'new' then lien_he end) data_da_goi
+                        , count(distinct case when crm_lead_user_id is not null and state= 'new' then lien_he end) data_chua_goi
+                        , sum(case when crm_lead_user_id is not null then len_so_ngay_nhan end) time_len_so_nhan_so
+                        , sum(case when crm_lead_user_id is not null then nhan_so_goi end) time_nhan_so_goi
+                        , sum(case when crm_lead_user_id is not null then len_so_goi end) time_len_so_goi
+                        , sum(case when crm_lead_user_id is not null then hc_len_so_ngay_nhan end) time_len_so_nhan_so_hc
+                        , sum(case when crm_lead_user_id is not null then hc_nhan_so_goi end) time_nhan_so_goi_hc
+                        , sum(case when crm_lead_user_id is not null then hc_len_so_goi end) time_len_so_goi_hc
+                from total
+                group by crmf99_system_id,channel_id , crm_group_id, team_id, crm_lead_user_id, product_category_id, country_type_id, date_trunc('day',created_datetime), date_trunc('day',ngay_nhan_so), date_trunc('day',ngay_goi), phan_loai_khach
+                )
+            select *, 'zh' db_source from tab

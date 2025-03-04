@@ -1,0 +1,14 @@
+select 
+    muctieutheonhan.product_category_id
+    , muctieutheonhan.crmf99_system_id
+    , muctieutheonhan.thang::integer thang
+    , muctieutheonhan.nam::integer nam 
+    , coalesce(doanhthutrensdt, 0) doanhthutrensdt
+    , coalesce(doanhthudukien, 0) doanhthudukien
+    , coalesce(hieusuatnhansu, 1) hieusuatnhansu
+    , coalesce(muctieuaov, 0) muctieuaov
+    , coalesce(muctieuphantramxacnhan, 0) muctieuphantramxacnhan
+    , coalesce(muctieuphantramchot, 0) muctieuphantramchot
+from 
+    muctieutheonhan_chitiet
+    left join muctieutheonhan on muctieutheonhan.id = muctieutheonhan_chitiet.muctieutheonhan_id 

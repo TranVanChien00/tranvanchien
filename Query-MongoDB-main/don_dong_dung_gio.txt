@@ -1,0 +1,29 @@
+with tab as (
+select
+    sale_order.id 
+    , case 
+        when warehouse_id in (96, 114) then 96 
+        when warehouse_id in (112, 115) then 112 
+        when warehouse_id in (97, 113) then 97
+        else warehouse_id
+    end warehouse_id
+    , date_trunc('day', date_order + interval '7 hour') ngay_dat
+    , date_part('hour', date_order + interval '7 hour') gio 
+    , date_trunc('day', latest_done_pick_datetime + interval '7 hour') ngay_xuat
+    , date_part('day', date_trunc('day', latest_done_pick_datetime + interval '7 hour') - date_trunc('day', date_order + interval '7 hour')) ngay 
+from 
+    sale_order 
+where 
+    date_order + interval '7 hour'>= {{Date}}::date
+    and summary_state not in ('rfq','cancel')
+) 
+select 
+    ngay_dat
+    , stock_warehouse.name kho 
+    , count(distinct tab.id) tong_don 
+    , count(distinct tab.id) filter(where gio<15) don_truoc_15h
+    , count(distinct tab.id) filter(where gio>=15) don_sau_15h 
+    , count(distinct tab.id) filter(where (gio<15 and ngay= 0) or (gio>15 and ngay<=1)) dung_gio
+    
+from tab left join stock_warehouse on stock_warehouse.id = tab.warehouse_id
+group by ngay_dat, stock_warehouse.name

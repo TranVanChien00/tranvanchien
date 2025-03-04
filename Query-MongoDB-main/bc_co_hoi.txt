@@ -1,0 +1,64 @@
+with tab_note as (
+select crm_lead_id, count(crm_lead_note2.id) lead_note from crm_lead_note2
+left join crm_lead on crm_lead.id = crm_lead_note2.crm_lead_id
+[@tab_note]
+group by crm_lead_id
+),
+
+tab as (
+select
+                    crm_lead.id lead_id 
+                    , crm_lead.first_user_id
+                    , crm_lead.user_id
+                    , crm_group.id crm_group_id 
+                    , product_category.id product_category_id
+                    , country_type.id country_type_id 
+                    , date_trunc('day', crm_lead.first_date_open + interval '7 hour') first_date_open
+                    , date_trunc('day', crm_lead.date_open + interval '7 hour') date_open
+                    , date_trunc('day', crm_lead.create_date + interval '7 hour') create_date
+                    , crm_lead_note2.lead_note 
+                    , utm_source.channel_id
+                    , case 
+                		when res_partner.customer_type= 'wholesale' then 'Sỉ'
+                		when  res_partner.customer_type= 'tmtd' then 'Thương mại điện tử'
+                		else 'Lẻ'
+                	end phan_loai_khach
+                from 
+                    crm_lead 
+                    left join crm_group on crm_group.id = crm_lead.crm_group_id 
+                    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id 
+                    left join product_category on product_category.id = crm_lead.product_category_id
+                    left join res_partner on res_partner.id = crm_lead.partner_id
+                    left join utm_source on utm_source.id = res_partner.source_id
+                    left join country_type on country_type.id = res_partner.country_type_id 
+                    left join tab_note crm_lead_note2 on crm_lead_note2.crm_lead_id = crm_lead.id 
+                where 
+                    crm_lead.active= 'true'
+                    and crm_lead.opportunity_type= 'sale'
+                    [@data_raw]
+                    )
+ select 
+ count(lead_id) so_co_hoi 
+ , count(lead_id) filter(where lead_note is not null) da_goi
+ , first_date_open
+ , date_open
+ , create_date
+ , first_user_id
+ , user_id
+ , crm_group_id
+ , country_type_id
+ , product_category_id 
+ , channel_id
+ , phan_loai_khach
+ , 'zh' db_source
+ from tab 
+ group by first_date_open
+ , date_open
+ , create_date
+ , first_user_id
+ , user_id
+ , crm_group_id
+ , product_category_id
+ , channel_id
+ , phan_loai_khach
+ , country_type_id

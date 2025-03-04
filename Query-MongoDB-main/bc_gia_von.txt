@@ -1,0 +1,62 @@
+with data_raw as ( 
+select 
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.latest_done_pick_datetime + interval '7 hour') ngay_van_chuyen 
+    , coalesce(sale_order.user_id, 0) user_id 
+    , coalesce(sale_order.team_id, 0) team_id 
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id 
+    , sale_order.crmf99_system_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id 
+    , coalesce( sale_order.product_category_id, 0) product_category_id 
+    , sale_order.summary_state 
+    , case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount 
+    , sum(sale_order_line.product_uom_qty*coalesce(ir_property.value_float, 0)) gia_von
+    , sum(sale_order_line.product_uom_qty) so_luong_ban
+    , case when position( 'sua' in string_agg(phanloaisanpham, ', '))> 0 then 'sua' else 'thuong' end phan_loai_don
+from 
+    sale_order_line
+    left join sale_order on sale_order.id = sale_order_line.order_id
+    left join res_partner on sale_order.partner_id = res_partner.id  
+    left join product_product on product_product.id = sale_order_line.product_id 
+    left join product_template on product_template.id = product_product.product_tmpl_id
+    left join ir_property on ir_property.res_id = concat('product.product,', product_product.id)
+where 
+    sale_order.latest_done_pick_datetime between (date_trunc('month', current_date) + INTERVAL '-12 month -7 hour') and (current_date + INTERVAL '17 hour + 00 minute - 1 second')
+group by 
+    sale_order.id 
+    , sale_order.latest_done_pick_datetime
+    , sale_order.user_id
+    , sale_order.team_id
+    , sale_order.crm_group_id
+    , sale_order.crmf99_system_id
+    , sale_order.product_category_id
+    , sale_order.summary_state
+    , sale_order.currency_id
+    , sale_order.currency_rate
+    , sale_order.amount_total
+    , res_partner.country_type_id
+), tab as (
+select 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id 
+    , crmf99_system_id 
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , count(distinct order_id) filter(where phan_loai_don= 'sua') don_sua 
+    , sum(so_luong_ban) so_luong_ban
+    , sum(gia_von) gia_von
+from data_raw 
+group by 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_category_id 
+    , crmf99_system_id 
+) 
+select sum(tong_don), sum(tong_ds) from tab where to_char(ngay_van_chuyen, 'yyyy/mm/dd')= '2024/05/25'

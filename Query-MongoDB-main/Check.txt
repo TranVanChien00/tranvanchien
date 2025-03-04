@@ -1,0 +1,84 @@
+with data_raw as (
+ select          
+crm_lead.id         
+, 1 num_resale         
+, count(sale_order.id) number_resale
+, count(distinct sale_order.partner_id) so_khach
+,SUM(case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end ) amount_total         
+,date_trunc('month',sale_order.confirmed_datetime + interval '7 hour + 0 minute + 0 second') thang_nhan          
+,date_trunc('month', coalesce((select confirmed_datetime from sale_order where opportunity_id = crm_lead.sale_crm_lead_id order by id limit 1), crm_lead.created_datetime)   + interval '7 hour + 0 minute + 0 second') thang_tao       
+,coalesce(utm_source.crm_group_id, sale_order.contact_creator_crm_group_id) mkt_crm_group_id       
+, sale_order.crm_group_id        
+, sale_order.team_id        
+, sale_order.user_id       
+, res_partner.country_type_id        
+, product_category.id nhan_id  
+, ( select  ceil((EXTRACT(epoch FROM max(sale_order.create_date) ) - EXTRACT(epoch FROM min(sale_order.create_date) ))/ (24*60*60) ) from sale_order where sale_order.opportunity_id = crm_lead.id) vong_doi
+from  sale_order 
+left join crm_lead on crm_lead.id = sale_order.opportunity_id       
+left join crmf99_system on crmf99_system.id = sale_order.crmf99_system_id     
+left join utm_source on utm_source.id = sale_order.source_id   
+left join product_category on product_category.id = crm_lead.product_category_id 
+LEFT JOIN res_partner ON res_partner.ID = sale_order.partner_id   
+where     crm_lead.opportunity_type = 'resale'   
+and sale_order.summary_state not in ('rfq','cancel')    
+and sale_order.confirmed_datetime is not null   
+and crm_lead.date_open is not null  
+and crmf99_system.id= 33 
+group by 
+crm_lead.id,
+date_trunc('month',sale_order.confirmed_datetime + interval '7 hour + 0 minute + 0 second'),
+date_trunc('month', coalesce((select confirmed_datetime from sale_order where opportunity_id = crm_lead.sale_crm_lead_id order by id limit 1), crm_lead.created_datetime)   + interval '7 hour + 0 minute + 0 second'),
+coalesce(utm_source.crm_group_id, sale_order.contact_creator_crm_group_id)       
+, sale_order.crm_group_id        
+, sale_order.team_id        
+, sale_order.user_id           
+, res_partner.country_type_id        
+, product_category.id 
+)
+
+select 
+sum(so_khach) so_khach,    
+sum(number_resale) so_don,    
+sum(amount_total) resale,
+sum(0) amount_completed,   
+thang_nhan
+, sum(0) data_sale
+, sum(0) ds_sale
+,thang_tao
+, mkt_crm_group_id 
+, user_id
+, crm_group_id
+, team_id
+, nhan_id
+, country_type_id
+, sum(amount_total) filter(where number_resale = 1) lan_1
+, sum(amount_total) filter(where number_resale = 2) lan_2
+, sum(amount_total) filter(where number_resale = 3) lan_3
+, sum(amount_total) filter(where number_resale = 4) lan_4
+, sum(amount_total) filter(where number_resale = 5) lan_5
+, sum(amount_total) filter(where number_resale >= 6) lan_6
+, sum(number_resale) filter(where number_resale = 1) sd_lan_1
+, sum(number_resale) filter(where number_resale = 2) sd_lan_2
+, sum(number_resale) filter(where number_resale = 3) sd_lan_3
+, sum(number_resale) filter(where number_resale = 4) sd_lan_4
+, sum(number_resale) filter(where number_resale = 5) sd_lan_5
+, sum(number_resale) filter(where number_resale >= 6) sd_lan_6
+, sum(so_khach) filter(where number_resale = 1) sk_lan_1
+, sum(so_khach) filter(where number_resale = 2) sk_lan_2
+, sum(so_khach) filter(where number_resale = 3) sk_lan_3
+, sum(so_khach) filter(where number_resale = 4) sk_lan_4
+, sum(so_khach) filter(where number_resale = 5) sk_lan_5
+, sum(so_khach) filter(where number_resale >= 6) sk_lan_6
+, avg(case when vong_doi = 0 then 1 else vong_doi end) vong_doi
+, 'zh' db_source
+from data_raw
+group by 
+thang_tao
+, thang_nhan
+, mkt_crm_group_id 
+, user_id
+, crm_group_id
+, team_id
+, country_type_id
+, nhan_id

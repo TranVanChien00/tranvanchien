@@ -1,0 +1,23 @@
+select 
+    hr_employee.id employee_id 
+    ,  hr_employee.user_id
+    , hr_employee.employee_code
+    , hr_employee.start_work_date
+    , hr_employee.terminate_date
+    , ez_team_management.name team_name 
+    , hr_job.name job_name 
+    , hr_department.name department_name 
+    , employee_list_of_projects.name emp_project_name 
+    , hr_job.job_position
+    , hr_contract.total_wage
+	, hr_contract.wage 
+from 
+    hr_employee
+    left join hr_job on hr_job.id = hr_employee.job_id 
+    left join hr_department on hr_department.id = hr_employee.department_id
+    left join employee_list_of_projects on employee_list_of_projects.id = hr_employee.emp_project_id
+    left join ez_team_management on ez_team_management.id = hr_employee.team_id 
+    left join hr_contract on hr_contract.id = hr_employee.contract_id 
+    
+where 
+    hr_employee.active= 'true'

@@ -1,0 +1,287 @@
+with data_month as (
+select 
+        generate_series thang 
+        , row_number() over(order by generate_series desc) stt 
+        , case when generate_series = date_trunc('month', current_date) then date_part('day', generate_series + interval '1 month - 1 second')/date_part('day', current_date) else 1 end ty_le_du_kien
+        , case when date_part('month', generate_series)<10 then concat('T0', date_part('month', generate_series)) else concat('T', date_part('month', generate_series)) end ten 
+from generate_series(
+                    coalesce( [[concat({{thang}}, '/01')::date,]] date_trunc('month', current_date)) + interval '-1 month' 
+                    , coalesce([[concat({{thang}}, '/01')::date,]] date_trunc('month', current_date))
+                    , '1 month'::interval
+    )
+),
+data_kpi as (
+        select 
+            concat(nam, '/', thang, '/01')::date thang_kpi 
+            , sum(kpi) kpi 
+            , row_number() over(order by concat(nam, '/', thang, '/01')::date desc ) stt
+        from cotmoczholding
+        where 
+            cotmoczholding.tentieuchi!= 'Doanh số nước ngoài'
+            and 
+                [[ concat(nam, '/', thang, '/01')::date between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' and ]]
+            (
+                concat(nam, '/', thang, '/01')::date between date_trunc('month', current_date) + interval '-1 month' and date_trunc('month', current_date) + interval '1 month - 1 second'
+                [[ or concat(nam, '/', thang, '/01')::date between concat({{thang}}, '/01')::date + interval '-1 month' and concat({{thang}}, '/01')::date + interval '1 month - 1 second' ]]
+            ) 
+        group by thang_kpi 
+), 
+data_1 as (
+    select 
+        date_trunc('month', latest_done_pick_datetime) thang
+        , case 
+        when stock_warehouse.id= 113 then 97
+        when stock_warehouse.id= 114 then 96
+        when stock_warehouse.id= 115 then 112
+        else stock_warehouse.id
+    end warehouse_id
+        , coalesce(sum(tong_ds), 0) tong_ds
+        , coalesce(sum(ds_thanh_cong), 0) ds_thanh_cong
+        , coalesce(sum(ds_cty_sale), 0) ds_cty_sale
+        , coalesce(sum(ds_cty_resale), 0) ds_cty_resale
+        , coalesce(sum(ds_cty_ban_buon), 0) ds_cty_ban_buon
+        , coalesce(sum(ds_cty_tmdt), 0) ds_cty_tmdt
+        , coalesce(sum(tong_ds) filter(where crmf99_system_id not in(20, 32, 34)), 0) doanh_so_ke_hoach
+        , coalesce(sum(tong_don), 0) tong_don 
+        , coalesce(sum(ds_theo_ship), 0) ds_theo_ship 
+        , coalesce(sum(don_sua), 0) don_sua
+        , coalesce(sum(don_hoan), 0) don_hoan
+        , coalesce(sum(sai_tuyen), 0) sai_tuyen
+        , coalesce(sum(sai_tuyen_thieu_ton), 0) sai_tuyen_thieu_ton
+        , coalesce(sum(phi_ship), 0) phi_ship
+    from 
+        bc_ds_bh_nvc
+        left join stock_warehouse on stock_warehouse.id = bc_ds_bh_nvc.warehouse_id
+        left join product_category on product_category.id = bc_ds_bh_nvc.product_category_id 
+        left join crm_group on crm_group.id = bc_ds_bh_nvc.crm_group_id 
+    group by date_trunc('month', latest_done_pick_datetime), stock_warehouse.id  
+), 
+data_2 as (
+    select
+        date_trunc('month', latest_done_pick_datetime) thang
+        , case 
+        when stock_warehouse.id= 113 then 97
+        when stock_warehouse.id= 114 then 96
+        when stock_warehouse.id= 115 then 112
+        else stock_warehouse.id
+    end warehouse_id
+        , sum(so_luong_ban*gia_von) gia_von
+        , sum(tong_ds) tong_ds_gv
+    from 
+        data_month
+        left join bc_ds_bh_nvc_line on data_month.thang = date_trunc('month', bc_ds_bh_nvc_line.latest_done_pick_datetime)
+        left join stock_warehouse on stock_warehouse.id = bc_ds_bh_nvc_line.warehouse_id
+        left join product_category on product_category.id = bc_ds_bh_nvc_line.product_category_id 
+        left join crm_group on crm_group.id = bc_ds_bh_nvc_line.crm_group_id 
+        left join product_product on product_product.id = bc_ds_bh_nvc_line.product_id 
+    group by date_trunc('month', latest_done_pick_datetime), stock_warehouse.id  
+), 
+tab1 as (
+select 
+    data_1.thang 
+    , data_1.warehouse_id
+    , tong_ds
+    , case when date_part('month', data_1.thang)<10 then concat('T0', date_part('month', data_1.thang), ' - ', stock_warehouse.name ) else concat('T', date_part('month', data_1.thang), ' - ', stock_warehouse.name ) end ten 
+    , case when tong_ds - ds_cty_ban_buon - ds_cty_tmdt= 0 then 0 else ds_cty_ban_buon/(tong_ds - ds_cty_ban_buon - ds_cty_tmdt)::float end ty_le_bb_ban_le --
+    , case when tong_ds= 0 then 0 else ds_cty_ban_buon/tong_ds::float end ty_trong_bb --
+    , case when tong_ds= 0 then 0 else ds_cty_tmdt/tong_ds::float end ty_trong_tmdt --
+    , case when tong_ds= 0 then 0 else (tong_ds - ds_cty_ban_buon - ds_cty_tmdt)/tong_ds::float end ty_trong_ban_le --
+    , case when tong_don= 0 then 0 else tong_ds/tong_don::float end aov --
+    , case when tong_ds= 0 then 0 else ds_thanh_cong/tong_ds::float end ty_le_thanh_cong --
+    , case when tong_don= 0 then 0 else don_hoan/tong_don::float end ty_le_hoan --
+    , case when ds_cty_sale= 0 then 0 else ds_cty_resale/ds_cty_sale::float end ty_trong_resale --
+    , case when tong_don= 0 then 0 else sai_tuyen/tong_don::float end ty_le_sai_tuyen --
+    , case when tong_don= 0 then 0 else sai_tuyen_thieu_ton/tong_don::float end ty_le_thieu_ton  -- 
+    , case when ds_theo_ship= 0 then 0 else phi_ship/ds_theo_ship::float end ty_le_phi_ship --
+    , case when tong_don= 0 then 0 else don_sua/tong_don::float end  ty_le_don_sua --
+    , case when coalesce(data_2.tong_ds_gv, 0)= 0 then 0 else coalesce(data_2.gia_von, 0)/data_2.tong_ds_gv::float end ty_le_gia_von --
+from 
+    data_month 
+    left join data_1 on data_1.thang = data_month.thang 
+    left join data_2 on data_1.thang = data_2.thang and data_1.warehouse_id = data_2.warehouse_id
+    left join stock_warehouse on stock_warehouse.id = data_1.warehouse_id
+union 
+select 
+    data_1.thang 
+    , 0
+    , sum(tong_ds)
+    , case when date_part('month', data_1.thang)<10 then concat('T0', date_part('month', data_1.thang) ) else concat('T', date_part('month', data_1.thang)) end ten 
+    , case when sum(tong_ds - ds_cty_ban_buon - ds_cty_tmdt)= 0 then 0 else sum(ds_cty_ban_buon)/sum(tong_ds - ds_cty_ban_buon - ds_cty_tmdt)::float end ty_le_bb_ban_le --
+    , case when sum(tong_ds)= 0 then 0 else sum(ds_cty_ban_buon)/sum(tong_ds)::float end ty_trong_bb --
+    , case when sum(tong_ds)= 0 then 0 else sum(ds_cty_tmdt)/sum(tong_ds)::float end ty_trong_tmdt --
+    , case when sum(tong_ds)= 0 then 0 else sum(tong_ds - ds_cty_ban_buon - ds_cty_tmdt)/sum(tong_ds)::float end ty_trong_ban_le --
+    , case when sum(tong_don)= 0 then 0 else sum(tong_ds)/sum(tong_don)::float end aov --
+    , case when sum(tong_ds)= 0 then 0 else sum(ds_thanh_cong)/sum(tong_ds)::float end ty_le_thanh_cong --
+    , case when sum(tong_don)= 0 then 0 else sum(don_hoan)/sum(tong_don)::float end ty_le_hoan --
+    , case when sum(ds_cty_sale)= 0 then 0 else sum(ds_cty_resale)/sum(ds_cty_sale)::float end ty_trong_resale --
+    , case when sum(tong_don)= 0 then 0 else sum(sai_tuyen)/sum(tong_don)::float end ty_le_sai_tuyen --
+    , case when sum(tong_don)= 0 then 0 else sum(sai_tuyen_thieu_ton)/sum(tong_don)::float end ty_le_thieu_ton  -- 
+    , case when sum(ds_theo_ship)= 0 then 0 else sum(phi_ship)/sum(ds_theo_ship)::float end ty_le_phi_ship --
+    , case when sum(tong_don)= 0 then 0 else sum(don_sua)/sum(tong_don)::float end  ty_le_don_sua --
+    , case when coalesce(sum(data_2.tong_ds_gv), 0)= 0 then 0 else coalesce(sum(data_2.gia_von), 0)/sum(data_2.tong_ds_gv)::float end ty_le_gia_von --
+from 
+    data_month 
+    left join data_1 on data_1.thang = data_month.thang 
+    left join data_2 on data_1.thang = data_2.thang and data_1.warehouse_id = data_2.warehouse_id
+    left join stock_warehouse on stock_warehouse.id = data_1.warehouse_id
+group by data_1.thang 
+), 
+tab_format as (
+select 
+    ten 
+    , '01. Tỷ lệ tồn kho lấp đầy đơn' chi_tieu
+    , ty_le_thieu_ton gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1 
+union 
+select 
+    ten 
+    , '02. Tỷ trọng loại đơn sữa' chi_tieu
+    , ty_le_don_sua gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1 
+union 
+select 
+    ten 
+    , '03. Tỷ trọng chi phí vận chuyển' chi_tieu
+    , ty_le_phi_ship gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1 
+union 
+select 
+    ten 
+    , '04. Tỷ trọng đơn sai tuyển' chi_tieu
+    , ty_le_sai_tuyen gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '07. Tỷ trọng bán buôn/bán lẻ' chi_tieu
+    , ty_le_bb_ban_le gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '08. Tỷ trọng cơ cấu nhóm ngành' chi_tieu
+    , null gia_tri 
+    , null phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '08.a. Bán buôn' chi_tieu
+    , ty_trong_bb gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '08.b. Bán lẻ' chi_tieu
+    , ty_trong_ban_le gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '08.c. TMĐT' chi_tieu
+    , ty_trong_tmdt gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '10. AOV' chi_tieu
+    , aov gia_tri 
+    , 2 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '11. Tỷ trọng Resale' chi_tieu
+    , ty_trong_resale gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '12. Tỷ lệ thành công' chi_tieu
+    , ty_le_thanh_cong gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '13. Tỷ lệ hủy/hoàn' chi_tieu
+    , ty_le_hoan gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '14. Tỷ trọng giá vốn' chi_tieu
+    , ty_le_gia_von gia_tri 
+    , 1 phan_loai
+    , warehouse_id
+from tab1
+union 
+select 
+    ten 
+    , '05. Tỷ lệ hoàn thành kế hoạch'
+    , sum(doanh_so_ke_hoach)/(select kpi from data_kpi where thang_kpi= data_month.thang )::float
+    , 1 
+    , 0 
+from 
+    data_month 
+    left join data_1 on data_1.thang = data_month.thang 
+group by ten, data_month.thang 
+union
+select 
+    ten 
+    , '06. Tỷ lệ tăng trưởng doanh thu'
+    , case when warehouse_id= 0 then tong_ds/(select sum(tong_ds) from data_1 where data_1.thang + interval '1 month' = tab1.thang)::float else tong_ds/(select sum(tong_ds) from data_1 where data_1.thang + interval '1 month' = tab1.thang and data_1.warehouse_id = tab1.warehouse_id)::float end
+    , 1 
+    , warehouse_id
+from tab1 
+union
+select 
+    ten 
+    , '09. Khả năng hoàn thành mục tiêu'
+    , sum(doanh_so_ke_hoach)*ty_le_du_kien/(select kpi from data_kpi where thang_kpi= data_month.thang )::float
+    , 1 
+    , 0 
+from 
+    data_month 
+    left join data_1 on data_1.thang = data_month.thang 
+group by ten, data_month.thang, ty_le_du_kien 
+) 
+select 
+    ten 
+    , chi_tieu
+    , case 
+            when phan_loai= 1 then 
+                case when warehouse_id!= 0 then concat(case when gia_tri*100<1 then to_char(gia_tri*100, '0.9') else to_char(gia_tri*100, '9,999.9') end, '%')
+                else concat(case when gia_tri*100<1 then to_char(gia_tri*100, '0.9') else to_char(gia_tri*100, '9,999.9') end, '%`')
+                end 
+            else 
+                case when warehouse_id!= 0 then case when gia_tri<1 then to_char(gia_tri, '0.99') else to_char(gia_tri, '9,9999,999,999') end 
+                else concat(case when gia_tri<1 then to_char(gia_tri, '0.99') else to_char(gia_tri, '9,9999,999,999') end, '`')
+                end 
+        end gia_tri
+from tab_format 
+where warehouse_id in (113, 97, 114, 96, 115, 112, 2, 3, 4, 0)
+order by chi_tieu, ten 

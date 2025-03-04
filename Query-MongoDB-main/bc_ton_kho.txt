@@ -1,0 +1,11 @@
+select 
+    stock_quant.product_id
+    , stock_location.warehouse_id 
+    , sum(case when stock_quant.quantity - stock_quant.reserved_quantity<0 then 0 else stock_quant.quantity - stock_quant.reserved_quantity end) ton 
+from 
+    stock_quant 
+    left join stock_location on stock_location.id = stock_quant.location_id
+where  
+    stock_location.name in ('Kho', 'Stock') 
+    and stock_location.warehouse_id != 83
+group by stock_quant.product_id, stock_location.warehouse_id

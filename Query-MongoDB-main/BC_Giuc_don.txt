@@ -1,0 +1,110 @@
+with data_raw as (
+select
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') ngay_xn 
+    , date_trunc('day', sale_order.create_date + interval '7 hour') ngay_dat
+    , sum(case when sale_order_line.ti_gia is not null and sale_order_line.ti_gia > 1 then sale_order_line.thanh_tien_noi_dia else price_subtotal end) amount 
+    , sale_order_operating.id operating_id
+    , sale_order.summary_state
+    , sale_order_operating.state 
+    , coalesce(res_users.id, 0) user_id 
+    , coalesce(crm_group.id, 0) group_id 
+    , coalesce(stock_warehouse.id, 0) warehouse_id
+    , coalesce(product_category.id, 0) category_id 
+    , coalesce(country_type.id, 0) country_id 
+    , case when res_partner.customer_type is null then 'retail' else res_partner.customer_type end customer_type
+from 
+    sale_order_line
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join sale_order_operating  on sale_order.id = sale_order_operating.sale_order_id
+    left outer join sale_order_operating o2 on sale_order.id = o2.sale_order_id and sale_order_operating.id < o2.id
+    left join res_users on res_users.id = sale_order.confirm_uid
+    left join stock_warehouse on stock_warehouse.id = sale_order.warehouse_id
+    left join product_category on product_category.id = sale_order.product_category_id
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join country_type on country_type.id = res_partner.country_type_id 
+    left join crm_group on crm_group.id = sale_order.crm_group_id  
+where 
+    o2.id is null 
+    and sale_order.create_date>= current_date + interval '-6 month - 7 hour'
+    and sale_order.create_date = @ngay 
+    and res_users.id = @user_id
+    and crm_group.id = @group_id 
+    and stock_warehouse.id = @warehouse_id
+    and product_category.id = @category_id
+    and country_type.id = @category_id
+group by 
+    sale_order.id
+    , ngay_dat
+    , ngay_xn
+    , sale_order_operating.id 
+    , res_users.id 
+    , crm_group.id 
+    , country_type.id
+    , product_category.id
+    , stock_warehouse.id 
+    , res_partner.customer_type
+having sum(case when sale_order_line.ti_gia is not null and sale_order_line.ti_gia > 1 then sale_order_line.thanh_tien_noi_dia else price_subtotal end)> 0
+)
+
+select
+    data_ngay.ngay, data_ngay.user_id, data_ngay.group_id, data_ngay.warehouse_id, data_ngay.category_id, data_ngay.country_id, data_ngay.customer_type, crm_team.id team_id, crmf99_system.id system_id 
+    , res_users.name user_name 
+    , crm_team.name team_name 
+    , crm_group.name group_name 
+    , crmf99_system.name system_name 
+    , stock_warehouse.name warehouse_name 
+    , product_category.name category_name 
+    , country_type.name country_name 
+    , coalesce("DS Chốt", 0) "DS Chốt"
+    , coalesce("DS Xác nhận", 0) "DS Xác nhận"
+    , coalesce("DS Chuyển", 0) "DS Chuyển"
+    , coalesce("DS Hủy kho", 0) "DS Hủy kho"
+    , coalesce("DS Hoàn chuyển", 0) "DS Hoàn chuyển"
+    , coalesce("DS trên đường", 0) "DS trên đường"
+    , coalesce("DS Đến bưu cục", 0) "DS Đến bưu cục"
+    , coalesce("DS TC đã import", 0) "DS TC đã import"
+    , coalesce("DS TC chưa import", 0) "DS TC chưa import"
+    , coalesce("Hoàn đã về", 0) "Hoàn đã về"
+from 
+    (select distinct ngay_dat ngay, user_id, group_id, warehouse_id, category_id, country_id, customer_type from data_raw
+    union 
+    select distinct ngay_xn, user_id, group_id, warehouse_id, category_id, country_id, customer_type from data_raw where ngay_xn is not null and summary_state not in ('rfq','cancel')) data_ngay
+    left join (
+                select
+                    ngay_xn, user_id, group_id, warehouse_id, category_id, country_id, customer_type
+                    , sum(amount)/1000 "DS Xác nhận"
+                    , sum(case when operating_id is not null then amount end) "DS Chuyển"
+                    , sum(case when state = '5_chuyen_hoan_tai_kho' then amount end) "DS Hủy kho"
+                    , sum(case when state in ('6_chuyen_hoan_chua_ve', '7_chuyen_hoan_da_ve') then amount end) "DS Hoàn chuyển"
+                    , sum(case when state in ('1_chua_xu_ly','2_dang_xu_ly','2_1_dang_xu_ly_luu_cho_phat') then amount end) "DS trên đường"
+                    , sum(case when state = '2_1_dang_xu_ly_luu_cho_phat' then amount end) "DS Đến bưu cục"
+                    , sum(case when state = '4_thanh_cong_da_import' then amount end) "DS TC đã import"
+                    , sum(case when state = '3_thanh_cong_chua_import' then amount end) "DS TC chưa import"
+                    , sum(case when state = '7_chuyen_hoan_da_ve' then amount end) "Hoàn đã về"
+                from data_raw
+                where 
+                    ngay_xn is not null 
+                    and summary_state not in ('rfq','cancel')
+                group by ngay_xn, user_id, group_id, warehouse_id, category_id, country_id, customer_type
+    ) ds_xn on ds_xn.ngay_xn = data_ngay.ngay and ds_xn.user_id = data_ngay.user_id and ds_xn.group_id = data_ngay.group_id and ds_xn.warehouse_id = data_ngay.warehouse_id 
+            and ds_xn.category_id = data_ngay.category_id and ds_xn.country_id = data_ngay.country_id and ds_xn.customer_type = data_ngay.customer_type
+    left join (
+                select 
+                    ngay_dat, user_id, group_id, warehouse_id, category_id, country_id, customer_type
+                    , sum(amount) "DS Chốt"
+                from data_raw
+                group by ngay_dat, user_id, group_id, warehouse_id, category_id, country_id, customer_type
+    ) ds_chot on ds_chot.ngay_dat = data_ngay.ngay and ds_chot.user_id = data_ngay.user_id and ds_chot.group_id = data_ngay.group_id and ds_chot.warehouse_id = data_ngay.warehouse_id 
+            and ds_chot.category_id = data_ngay.category_id and ds_chot.country_id = data_ngay.country_id and ds_chot.customer_type = data_ngay.customer_type
+    left join res_users on res_users.id = data_ngay.user_id
+    left join crm_team on crm_team.id = res_users.sale_team_id
+    left join crm_group on crm_group.id = data_ngay.group_id
+    left join crmf99_system on crmf99_system.id = crm_group.crmf99_system_id
+    left join stock_warehouse on stock_warehouse.id = data_ngay.warehouse_id
+    left join country_type on country_type.id = data_ngay.country_id
+    left join product_category on product_category.id = data_ngay.category_id
+where 
+    data_ngay.ngay is not null 
+    
+user_id, group_id, warehouse_id, category_id, country_id, team_id, system_id

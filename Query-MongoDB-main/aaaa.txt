@@ -1,0 +1,155 @@
+with tab as 
+(
+SELECT 
+
+    {{snippet: doanh_so_new}}, 
+    sale_order.opportunity_type ,  
+    crm_group.name as ten_congty,  
+    sale_order.summary_state as tinh_trang
+    
+{{snippet: Join_bh_new}} 
+WHERE  
+        [[ sale_order.create_date between ({{Start_date}}::date + INTERVAL '-7 hour') and ({{End_date}}::date + INTERVAL '17 hour + 00 minute - 1 second') and ]] 
+    (
+        sale_order.create_date between (current_date + INTERVAL '-7 hour') and (current_date + INTERVAL '17 hour + 00 minute - 1 second')
+        [[ or sale_order.create_date between ({{Start_date}}::date + INTERVAL '-7 hour') and ({{End_date}}::date + INTERVAL '17 hour + 00 minute - 1 second') ]]
+        
+    )  
+    and {{snippet: Don_le}}
+    and {{C}}
+    and {{company_zh}}
+    and {{Ten}} 
+    and {{ht}}
+    and {{ht1}}
+    and {{t}}
+    and {{sale_team_type}}
+    and {{nhan}}
+    and {{quoc_gia}}
+  ), 
+  tab1 as (select {{snippet: sum_doanh_so_new/1000}}tong_tien, opportunity_type, ten_congty, tinh_trang from tab group by opportunity_type, ten_congty, tinh_trang)
+ select * from 
+ ( select 
+    ten_congty "Công ty",
+    sum(tong_tien) "Doanh số chốt",
+      sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) "DS xác nhận",
+    case when  sum(tong_tien) !=0 then sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)::float/ sum(tong_tien)  else 0 end "DS xác nhận,%",
+    
+    
+   case when sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) != 0 then  (sum (CASE WHEN tinh_trang in ('completed') THEN tong_tien ELSE 0 END)/sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)) else 0 end "Thành công, %",
+    
+     case when sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) != 0 then (sum (CASE WHEN tinh_trang in ('returning','returned') THEN tong_tien ELSE 0 END)/ sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)) else 0 end "Hoàn, %",
+    (sum (CASE WHEN tinh_trang in ('cancel') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Hủy, %",
+    
+    sum (CASE WHEN tinh_trang in ('completed') THEN tong_tien ELSE 0 END) "Thành công",
+    
+    sum (CASE WHEN tinh_trang in ('rfq') THEN tong_tien ELSE 0 END) "Báo giá",
+    (sum (CASE WHEN tinh_trang in ('rfq') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Báo giá, %",
+    sum (CASE WHEN tinh_trang in ('confirmed') THEN tong_tien ELSE 0 END) "Đã xác nhận",
+    
+    (sum (CASE WHEN tinh_trang in ('confirmed') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Đã xác nhận, %",
+    sum (CASE WHEN tinh_trang in ('shipping','reshipping') THEN tong_tien ELSE 0 END) "Đang giao",
+    
+    (sum (CASE WHEN tinh_trang in ('shipping','reshipping') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end ) "Đang giao, %",
+    
+    sum (CASE WHEN tinh_trang in ('cancel') THEN tong_tien ELSE 0 END) "Hủy",
+    
+    
+    
+    sum (CASE WHEN tinh_trang in ('returning','returned') THEN tong_tien ELSE 0 END) "Hoàn"
+    
+from tab1 
+group by ten_congty ) A
+
+union (
+select 
+    '0 Tổng' "Công ty",
+    sum(tong_tien) "Doanh số chốt",
+      sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) "DS xác nhận",
+    case when  sum(tong_tien) !=0 then sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)::float/ sum(tong_tien)  else 0 end "DS xác nhận,%",
+    
+    
+   case when sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) != 0 then  (sum (CASE WHEN tinh_trang in ('completed') THEN tong_tien ELSE 0 END)/sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)) else 0 end "Thành công, %",
+    
+     case when sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) != 0 then (sum (CASE WHEN tinh_trang in ('returning','returned') THEN tong_tien ELSE 0 END)/ sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)) else 0 end "Hoàn, %",
+    (sum (CASE WHEN tinh_trang in ('cancel') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Hủy, %",
+    
+    sum (CASE WHEN tinh_trang in ('completed') THEN tong_tien ELSE 0 END) "Thành công",
+    
+    sum (CASE WHEN tinh_trang in ('rfq') THEN tong_tien ELSE 0 END) "Báo giá",
+    (sum (CASE WHEN tinh_trang in ('rfq') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Báo giá, %",
+    sum (CASE WHEN tinh_trang in ('confirmed') THEN tong_tien ELSE 0 END) "Đã xác nhận",
+    
+    (sum (CASE WHEN tinh_trang in ('confirmed') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Đã xác nhận, %",
+    sum (CASE WHEN tinh_trang in ('shipping','reshipping') THEN tong_tien ELSE 0 END) "Đang giao",
+    
+    (sum (CASE WHEN tinh_trang in ('shipping','reshipping') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end ) "Đang giao, %",
+    
+    sum (CASE WHEN tinh_trang in ('cancel') THEN tong_tien ELSE 0 END) "Hủy",
+    
+    
+    
+    sum (CASE WHEN tinh_trang in ('returning','returned') THEN tong_tien ELSE 0 END) "Hoàn"
+    
+from tab1 
+)union (
+select 
+    '1 Tổng sale' "Công ty",
+    sum(tong_tien) "Doanh số chốt",
+      sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) "DS xác nhận",
+    case when  sum(tong_tien) !=0 then sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)::float/ sum(tong_tien)  else 0 end "DS xác nhận,%",
+    case when sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) != 0 then  (sum (CASE WHEN tinh_trang in ('completed') THEN tong_tien ELSE 0 END)/sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)) else 0 end "Thành công, %",
+    
+     case when sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) != 0 then (sum (CASE WHEN tinh_trang in ('returning','returned') THEN tong_tien ELSE 0 END)/ sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)) else 0 end "Hoàn, %",
+    (sum (CASE WHEN tinh_trang in ('cancel') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Hủy, %",
+    
+    sum (CASE WHEN tinh_trang in ('completed') THEN tong_tien ELSE 0 END) "Thành công",
+    
+    sum (CASE WHEN tinh_trang in ('rfq') THEN tong_tien ELSE 0 END) "Báo giá",
+    (sum (CASE WHEN tinh_trang in ('rfq') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Báo giá, %",
+    sum (CASE WHEN tinh_trang in ('confirmed') THEN tong_tien ELSE 0 END) "Đã xác nhận",
+    
+    (sum (CASE WHEN tinh_trang in ('confirmed') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Đã xác nhận, %",
+    sum (CASE WHEN tinh_trang in ('shipping','reshipping') THEN tong_tien ELSE 0 END) "Đang giao",
+    
+    (sum (CASE WHEN tinh_trang in ('shipping','reshipping') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end ) "Đang giao, %",
+    
+    sum (CASE WHEN tinh_trang in ('cancel') THEN tong_tien ELSE 0 END) "Hủy",
+    
+    
+    
+    sum (CASE WHEN tinh_trang in ('returning','returned') THEN tong_tien ELSE 0 END) "Hoàn"
+    
+from tab1  where opportunity_type = 'sale'
+)union (
+select 
+    '2 Tổng Resale' "Công ty",
+    sum(tong_tien) "Doanh số chốt",
+      sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) "DS xác nhận",
+    case when  sum(tong_tien) !=0 then sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)::float/ sum(tong_tien)  else 0 end "DS xác nhận,%",
+    
+    
+   case when sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) != 0 then  (sum (CASE WHEN tinh_trang in ('completed') THEN tong_tien ELSE 0 END)/sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)) else 0 end "Thành công, %",
+    
+     case when sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END) != 0 then (sum (CASE WHEN tinh_trang in ('returning','returned') THEN tong_tien ELSE 0 END)/ sum (CASE WHEN tinh_trang not in  ('rfq','cancel') THEN tong_tien ELSE 0 END)) else 0 end "Hoàn, %",
+    (sum (CASE WHEN tinh_trang in ('cancel') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Hủy, %",
+    sum (CASE WHEN tinh_trang in ('completed') THEN tong_tien ELSE 0 END) "Thành công",
+    
+    sum (CASE WHEN tinh_trang in ('rfq') THEN tong_tien ELSE 0 END) "Báo giá",
+    (sum (CASE WHEN tinh_trang in ('rfq') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Báo giá, %",
+    sum (CASE WHEN tinh_trang in ('confirmed') THEN tong_tien ELSE 0 END) "Đã xác nhận",
+    
+    (sum (CASE WHEN tinh_trang in ('confirmed') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end) "Đã xác nhận, %",
+    sum (CASE WHEN tinh_trang in ('shipping','reshipping') THEN tong_tien ELSE 0 END) "Đang giao",
+    
+    (sum (CASE WHEN tinh_trang in ('shipping','reshipping') THEN tong_tien ELSE 0 END)/case when sum(tong_tien) = 0 then 1 else sum(tong_tien) end ) "Đang giao, %",
+    
+    sum (CASE WHEN tinh_trang in ('cancel') THEN tong_tien ELSE 0 END) "Hủy",
+    
+    
+    
+    sum (CASE WHEN tinh_trang in ('returning','returned') THEN tong_tien ELSE 0 END) "Hoàn"
+    
+from tab1  where opportunity_type = 'resale'
+)
+
+order by "Công ty" ASC

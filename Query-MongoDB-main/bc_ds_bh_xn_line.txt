@@ -1,0 +1,59 @@
+with data_raw_1 as ( 
+select 
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.latest_done_pick_datetime + interval '7 hour') ngay_van_chuyen 
+    , coalesce(sale_order.user_id, 0) user_id 
+    , coalesce(sale_order.team_id, 0) team_id 
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id 
+    , coalesce(res_partner.country_type_id, 0) country_type_id 
+    , coalesce(sale_order_line.product_id, 0) product_id 
+    , sale_order.opportunity_type 
+    , res_partner.customer_type 
+    , sale_order.opportunity_type
+    , case 
+        when crm_group.crm_group_type= 'tmdt' then 'Thương mại điện tử'
+        when crm_group.crm_group_type= 'ban_buon_he_thong' then 'Bán buôn tổng'
+        when (res_partner.customer_type = 'wholesale' and sale_order.opportunity_type = 'sale') then 'Bán buôn hệ thống'
+        when crm_group.crm_group_type = 'sale' then 'Sale' 
+        when crm_group.crm_group_type = 'resale' then 'Resale' 
+        else 'Khác' 
+    end phan_loai_theo_cong_ty 
+    , sale_order.summary_state 
+    , sale_order_line.product_uom_qty so_luong_ban
+    , case when sale_order_line.ti_gia is not null and sale_order_line.ti_gia > 1 then sale_order_line.thanh_tien_noi_dia else price_subtotal end amount 
+    , sale_order.warehouse_id
+from 
+    sale_order_line
+    left join sale_order on sale_order.id = sale_order_line.order_id 
+    left join res_partner on res_partner.id = sale_order.partner_id 
+    left join crm_group on crm_group.id = sale_order.crm_group_id 
+
+where 
+    sale_order.latest_done_pick_datetime between (date_trunc('month', current_date) + interval '-5 month -7 hour') and (current_date + interval '17 hour + 00 minute - 1 second')
+)
+select 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_id
+    , warehouse_id
+    , coalesce(count(distinct order_id), 0) tong_don 
+    , coalesce(sum(amount), 0) tong_ds 
+    , coalesce(count(distinct order_id) filter(where summary_state= 'completed'), 0) don_thanh_cong
+    , coalesce(sum(amount) filter(where summary_state= 'completed'), 0) ds_thanh_cong
+    , coalesce(count(distinct order_id) filter(where summary_state= 'returned'), 0) don_hoan 
+    , coalesce(sum(amount) filter(where summary_state= 'returned'), 0) ds_hoan  
+    , coalesce(sum(so_luong_ban), 0) so_luong_ban 
+    , coalesce(sum(so_luong_ban) filter(where summary_state= 'completed'), 0) ban_thanh_cong 
+    , coalesce(sum(so_luong_ban) filter(where summary_state= 'returned'), 0) ban_hoan 
+from data_raw_1
+group by 
+    ngay_van_chuyen 
+    , user_id 
+    , team_id 
+    , crm_group_id 
+    , country_type_id
+    , product_id
+    , warehouse_id

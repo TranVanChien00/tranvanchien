@@ -1,0 +1,10 @@
+https://bidata.zsolution.vn/public/question/c1388f74-dea7-498c-bd51-0f7511e38d0a?Start_date={{start_date}}&End_date={{end_date}}&province=&product_category=&company=&trangthai={{trangthai}}
+https://bidata.zsolution.vn/public/question/c1388f74-dea7-498c-bd51-0f7511e38d0a?Start_date={{d_0}}&End_date={{d_0}}&province=&product_category=&company=&trangthai={{trangthai}}
+https://bidata.zsolution.vn/public/question/c1388f74-dea7-498c-bd51-0f7511e38d0a?Start_date={{d_1}}&End_date={{d_1}}&province=&product_category=&company=&trangthai={{trangthai}}
+https://bidata.zsolution.vn/public/question/c1388f74-dea7-498c-bd51-0f7511e38d0a?Start_date={{start_date_old}}&End_date={{end_date_old}}&province=&product_category=&company=&trangthai={{trangthai}}
+coalesce([[{{Start_date}}::date, ]] date_trunc('month', current_date)) start_date , 
+    coalesce([[{{End_date}}::date, ]]  current_date) end_date, 
+    date_trunc('day', current_date) d_0, 
+    date_trunc('day', current_date) + interval '-1 day' d_1, 
+    date_trunc('month', current_date) start_date_old,
+    date_trunc('day', current_date) + interval '-2 day' end_date_old

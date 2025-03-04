@@ -1,0 +1,10 @@
+select 
+    tieuchikpi_id
+    , thang 
+    , nam
+    , sum(ketquathuchien) ket_qua 
+    , (sum(ketquathuchien)*date_part('day', date_trunc('month', current_date) + interval '1 month - 1 second'))/(date_part('day', current_date)*1000) du_kien
+from 
+    khaibaoketquathuchienkpi
+where active= 'true'
+group by tieuchikpi_id, thang, nam 

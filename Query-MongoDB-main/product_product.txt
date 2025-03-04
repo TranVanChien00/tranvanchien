@@ -1,0 +1,19 @@
+select 
+    product_product.id  
+    , product_product.name 
+    , product_product.default_code 
+    , product_category.id product_category_id 
+    , product_template.phanloaisanpham
+    , product_category.name category_name
+    , product_template.type 
+    , product_product.active 
+    , product_category.crm_group_id chu_nhan_id
+    , coalesce((select value_float from ir_property where ir_property.res_id = concat('product.product,', product_product.id) order by id desc limit 1), 0) gia_von
+    , name_vn.value
+    , 'zh' db_source
+from 
+    product_product
+    left join product_template on product_template.id = product_product.product_tmpl_id
+    left join product_category on product_category.id = product_template.categ_id
+    left join (select res_id, value from ir_translation where name= 'product.product,name' and lang= 'vi_VN') name_vn on name_vn.res_id = product_product.id 
+where product_product.default_code  is not null

@@ -1,0 +1,40 @@
+with data_raw as (
+                select 
+                    case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount
+                    , sale_order.id order_id 
+                    , case when res_partner.customer_type is null or res_partner.customer_type != 'wholesale' then 'le' else 'si' end customer_type
+                    , date_trunc('day', sale_order.confirmed_datetime + interval '7 hour') confirmed_datetime
+                    , coalesce(crm_lead_sale.user_id, 0) user_id
+                    , coalesce(crm_lead_sale.crm_group_id, 0) crm_group_id
+                    , coalesce(res_partner.country_type_id, 0) country_type_id 
+                    , coalesce(sale_order.product_category_id, 0) product_category_id
+                    , coalesce(utm_source.channel_id, 0) channel_id
+                from sale_order
+                left join crm_lead on crm_lead.id = sale_order.opportunity_id
+                left join crm_lead crm_lead_sale on crm_lead_sale.id = crm_lead.sale_crm_lead_id
+                left join res_partner on sale_order.partner_id = res_partner.id 
+                left join utm_source on utm_source.id = sale_order.source_id 
+                left join country_type on country_type.id = res_partner.country_type_id
+                left join report_product_category on report_product_category.id = sale_order.product_category_id
+                where 
+                    sale_order.summary_state= 'completed'
+                    and sale_order.opportunity_type= 'resale') 
+select 
+    confirmed_datetime
+    , user_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id
+    , count(distinct order_id) don_resale_tc  
+    , sum(amount) ds_resale_tc 
+    , coalesce(count(distinct order_id) filter(where customer_type= 'le'), 0) don_resale_le_tc 
+    , coalesce(sum(amount) filter(where customer_type= 'le'), 0) ds_resale_le_tc 
+from data_raw
+group by 
+    confirmed_datetime
+    , user_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id

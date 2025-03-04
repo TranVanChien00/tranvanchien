@@ -1,0 +1,11 @@
+select  
+    id
+    , name 
+    , region 
+    , vungmien_id 
+    , phanloaikho 
+from stock_warehouse 
+where 
+    active= 'true' 
+    and phanloaikho in ('noibo', 'doitac')
+order by id 

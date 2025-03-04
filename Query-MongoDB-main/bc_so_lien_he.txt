@@ -1,0 +1,36 @@
+with data_raw as (
+select
+    res_partner.id, 
+    coalesce(utm_source.user_id,0) user_id,
+    coalesce(utm_source.marketing_team_id,0) team_id,
+    coalesce(res_partner.product_category_id, 0) product_category_id,
+    coalesce(utm_source.crm_group_id, 0) crm_group_id,
+    coalesce(utm_source.crmf99_system_id, 0) crmf99_system_id,
+    coalesce(utm_source.channel_id,0) channel_id,
+    coalesce(res_partner.country_type_id, 0) country_type_id, 
+    date_trunc('day', res_partner.create_date + interval '+7 hour') create_date
+from res_partner
+    left join utm_source on res_partner.source_id=utm_source.id
+where
+    res_partner.was_closed is null or res_partner.was_closed is false) 
+    
+select 
+    create_date
+    , user_id
+    , team_id
+    , product_category_id
+    , crm_group_id
+    , crmf99_system_id
+    , channel_id
+    , country_type_id
+    , count(distinct id) sdt 
+from data_raw
+group by 
+    create_date
+    , user_id
+    , team_id
+    , product_category_id
+    , crm_group_id
+    , crmf99_system_id
+    , channel_id
+    , country_type_id

@@ -1,0 +1,19 @@
+select 
+    case 
+        when cotmoczholding.name= 'Doanh số Zsolution' then 11 
+        when cotmoczholding.name= 'Doanh số Sale' then 12
+        when cotmoczholding.name= 'Doanh số Resale' then 13
+        when cotmoczholding.name= 'Doanh số Bán buôn' then 14
+        when cotmoczholding.name= 'Doanh số ZGlobal' then 15
+        when cotmoczholding.name= 'Doanh số Dr.Nutri' then 16 
+        when cotmoczholding.name= 'Doanh số Nhà máy' then 17 
+        when cotmoczholding.name= 'Doanh số TMĐT' then 18 
+        when cotmoczholding.name= 'Doanh số BB Nhập khẩu' then 19 
+    end tieuchi_id 
+    , thang 
+    , nam 
+    , quy 
+    , sum(cotmoccandat) kpi 
+    , cotmoczholding.name tentieuchi
+from cotmoczholding
+group by tieuchi_id, thang, cotmoczholding.name, thang, nam, quy 

@@ -1,0 +1,40 @@
+with data_raw as (
+select
+    sale_order.id order_id 
+    , date_trunc('day', sale_order.create_date + interval '7 hour') create_date 
+    , coalesce(sale_order.user_id, 0) user_id
+    , coalesce(sale_order.team_id, 0) team_id
+    , coalesce(sale_order.crm_group_id, 0) crm_group_id
+    , coalesce(res_partner.country_type_id, 0) country_type_id 
+    , coalesce(sale_order.product_category_id, 0) product_category_id
+    , coalesce(utm_source.channel_id, 0) channel_id 
+    , sale_order.opportunity_type
+    , case when res_partner.customer_type is null or res_partner.customer_type != 'wholesale' then 'le' else 'si' end customer_type
+    , sale_order.summary_state
+    , case when sale_order.currency_id= 23 then sale_order.amount_total else sale_order.amount_total/sale_order.currency_rate end amount
+from sale_order 
+    left join res_partner on sale_order.partner_id = res_partner.id 
+    left join utm_source on utm_source.id = sale_order.source_id
+ ) 
+ 
+ select     
+    create_date
+    , user_id
+    , team_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id
+    , count(distinct order_id) tong_don 
+    , sum(amount) tong_ds 
+    , sum(amount) filter( where opportunity_type= 'sale') ds_sale 
+    , sum(amount) filter( where summary_state not in ('rfq','cancel')) ds_xac_nhan
+ from data_raw
+ group by 
+    create_date
+    , user_id
+    , team_id
+    , crm_group_id
+    , country_type_id
+    , product_category_id
+    , channel_id
