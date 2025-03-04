@@ -1,0 +1,4 @@
+link Tableau 
+	1: https://public.tableau.com/app/profile/kant.bergson/viz/Sale_Upwork/tranvanchien
+	2: https://public.tableau.com/app/profile/kant.bergson/viz/test_sale_1/Dashboard1
+	3: https://public.tableau.com/app/profile/kant.bergson/viz/Book2_16947086793240/Dashboard1
